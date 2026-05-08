@@ -1,417 +1,75 @@
-# EVzone Backend — Complete API Specification
+# EVzone Backend Foundation Specification
 
-## Overview
-Complete NestJS backend for the EVzone Global Green Finance Platform. Serves 4 frontend applications: Investor, Entrepreneur, Assessor, and Admin.
+## Summary
 
-## Architecture
-- **Framework**: NestJS 10 + TypeScript 5
-- **Database**: PostgreSQL 16 + TypeORM 0.3
-- **Auth**: JWT (access + refresh tokens) + bcrypt + Passport
-- **Validation**: class-validator + class-transformer + ValidationPipe
-- **Security**: Helmet + CORS + Throttler (rate limiting) + RBAC
-- **Docs**: Swagger/OpenAPI 3.0
-- **Deployment**: Docker + docker-compose
+The backend is a modular NestJS platform organized as an Nx workspace. It starts as a modular monolith with event-driven workers, Prisma/PostgreSQL persistence, Kafka outbox publishing, Redis operational helpers, and S3-compatible object storage.
 
-## Module Structure
-```
-src/
-├── main.ts                    # Entry point
-├── app.module.ts              # Root module
-├── config/                    # Configuration
-│   ├── app.config.ts
-│   ├── database.config.ts
-│   └── jwt.config.ts
-├── common/                    # Shared utilities
-│   ├── decorators/
-│   ├── filters/
-│   ├── guards/
-│   ├── interceptors/
-│   └── pipes/
-├── database/                  # DB config, migrations, seeder
-│   ├── data-source.ts
-│   └── seeder/
-├── modules/
-│   ├── auth/                  # Authentication
-│   ├── users/                 # Users & profiles
-│   ├── projects/              # Projects, deals, campaigns
-│   ├── investments/           # Investments, portfolio, transactions
-│   ├── due-diligence/         # Assessor engagements & reports
-│   ├── admin/                 # Admin oversight (compliance, risk, disputes, audit)
-│   ├── notifications/         # In-app notifications
-│   ├── documents/             # File uploads
-│   └── messaging/             # Internal messaging
-```
+## Deployable Apps
 
-## Core Entities
+- `apps/api`: REST API for auth, users, projects, documents/media, due diligence, investments, admin, notifications, and messaging.
+- `apps/worker-events`: publishes pending outbox events to Kafka.
+- `apps/worker-media`: verifies uploaded media and marks ready in the current scaffold.
+- `apps/worker-compliance`: queues open compliance cases for manual review in the current scaffold.
+- `apps/scheduler`: scheduled deal/deadline tasks.
 
-### User
-```typescript
-@Entity('users')
-class User {
-  id: UUID (PK)
-  email: string (unique)
-  password: string (bcrypt hash)
-  firstName: string
-  lastName: string
-  avatar: string (URL, nullable)
-  phone: string (nullable)
-  role: enum [INVESTOR, ENTREPRENEUR, PROVIDER, ADMIN] (default: INVESTOR)
-  status: enum [ACTIVE, SUSPENDED, PENDING_VERIFICATION, BLOCKED] (default: PENDING_VERIFICATION)
-  kycStatus: enum [NOT_STARTED, PENDING, VERIFIED, REJECTED] (default: NOT_STARTED)
-  kycSubmittedAt: Date (nullable)
-  kycVerifiedAt: Date (nullable)
-  country: string (nullable)
-  city: string (nullable)
-  bio: text (nullable)
-  preferences: jsonb (theme, language, notifications)
-  lastLoginAt: Date (nullable)
-  loginAttempts: number (default: 0)
-  lockoutUntil: Date (nullable)
-  createdAt: Date
-  updatedAt: Date
-  deletedAt: Date (nullable, soft delete)
-  
-  // Relations
-  investorProfile?: InvestorProfile
-  entrepreneurProfile?: EntrepreneurProfile
-  assessorProfile?: AssessorProfile
-  investments?: Investment[]
-  projects?: Project[] (as entrepreneur)
-  messagesSent?: Message[]
-  messagesReceived?: Message[]
-  notifications?: Notification[]
-  auditLogs?: AuditLog[]
-}
-```
+## Shared Libraries
 
-### InvestorProfile
-```typescript
-@Entity('investor_profiles')
-class InvestorProfile {
-  id: UUID (PK)
-  userId: UUID (FK -> users)
-  investorType: enum [INDIVIDUAL, INSTITUTIONAL, IMPACT_FUND, CORPORATE]
-  riskTolerance: enum [CONSERVATIVE, MODERATE, AGGRESSIVE]
-  annualIncome: decimal (nullable)
-  netWorth: decimal (nullable)
-  accreditationStatus: boolean (default: false)
-  investmentGoals: text[] (nullable)
-  preferredSectors: string[] (nullable)
-  totalInvested: decimal (default: 0)
-  totalReturns: decimal (default: 0)
-  activeInvestments: number (default: 0)
-  completedInvestments: number (default: 0)
-  esgPreferences: jsonb (nullable)
-  // ...timestamps
-}
-```
+- `libs/common`: decorators, pagination, filters, interceptors, request types, ledger balance guard.
+- `libs/database`: Prisma service/module and transaction helper.
+- `libs/auth`: JWT guard, roles guard, owner/admin guard, JWT payload types.
+- `libs/permissions`: tenant and owner authorization helpers.
+- `libs/events`: outbox service and Kafka publisher.
+- `libs/storage`: S3-compatible signed URL and object upload service.
+- `libs/redis`: Redis helper service for cache/idempotency/short locks.
+- `libs/audit`: audit log writer.
+- `libs/config`: environment-backed configuration factories.
 
-### EntrepreneurProfile
-```typescript
-@Entity('entrepreneur_profiles')
-class EntrepreneurProfile {
-  id: UUID (PK)
-  userId: UUID (FK -> users)
-  companyName: string
-  companyRegistration: string (nullable)
-  companyWebsite: string (nullable)
-  industry: string
-  foundedYear: number (nullable)
-  teamSize: number (nullable)
-  stage: enum [IDEA, MVP, EARLY_REVENUE, GROWTH, SCALE]
-  pitchDeck: string (URL, nullable)
-  previousFunding: decimal (default: 0)
-  totalRaised: decimal (default: 0)
-  activeCampaigns: number (default: 0)
-  completedCampaigns: number (default: 0)
-  // ...timestamps
-}
-```
+## Data Model
 
-### AssessorProfile
-```typescript
-@Entity('assessor_profiles')
-class AssessorProfile {
-  id: UUID (PK)
-  userId: UUID (FK -> users)
-  organizationName: string
-  organizationType: enum [INDIVIDUAL_CONSULTANT, FIRM, NGO, GOVERNMENT_BODY, ACADEMIC]
-  specialties: string[] (e.g. ['ESG_AUDIT', 'FINANCIAL_DUE_DILIGENCE', 'TECHNICAL_ASSESSMENT'])
-  credentials: jsonb (certifications, degrees)
-  yearsOfExperience: number
-  completedEngagements: number (default: 0)
-  rating: decimal (0-5, default: 0)
-  availabilityStatus: enum [AVAILABLE, BUSY, ON_LEAVE]
-  hourlyRate: decimal (nullable)
-  serviceRegions: string[] (nullable)
-  bio: text (nullable)
-  // ...timestamps
-}
-```
+Prisma models cover tenants, users, memberships, role-specific profiles, refresh/reset tokens, projects, milestones, media assets, documents, due-diligence cases/tasks, deals, investments, transactions, ledger accounts/entries, compliance alerts/cases, disputes, audit logs, notifications, messages, and outbox events.
 
-### Project
-```typescript
-@Entity('projects')
-class Project {
-  id: UUID (PK)
-  entrepreneurId: UUID (FK -> users)
-  title: string
-  slug: string (unique, for URLs)
-  subtitle: string (nullable)
-  description: text
-  longDescription: text (nullable)
-  coverImage: string (URL, nullable)
-  galleryImages: string[] (nullable)
-  videoUrl: string (nullable)
-  status: enum [DRAFT, UNDER_REVIEW, ACTIVE, FUNDED, COMPLETED, CANCELLED] (default: DRAFT)
-  
-  // Funding
-  fundingGoal: decimal
-  fundingRaised: decimal (default: 0)
-  minInvestment: decimal (default: 100)
-  maxInvestment: decimal (nullable)
-  currency: string (default: 'USD')
-  equityOffered: decimal (nullable) // percentage
-  
-  // Location
-  country: string
-  city: string (nullable)
-  region: string (nullable)
-  coordinates: point (nullable, PostGIS)
-  
-  // Categorization
-  sector: enum [SOLAR, WIND, HYDRO, BIOMASS, EV_CHARGING, GREEN_HYDROGEN, ENERGY_STORAGE, OTHER]
-  stage: enum [CONCEPT, FEASIBILITY, CONSTRUCTION, OPERATIONAL, EXPANSION]
-  impactMetrics: jsonb (CO2 reduction, jobs created, households served, etc.)
-  sdgs: number[] (SDG goal numbers)
-  
-  // Timeline
-  campaignStartDate: Date (nullable)
-  campaignEndDate: Date (nullable)
-  projectStartDate: Date (nullable)
-  projectEndDate: Date (nullable)
-  
-  // Meta
-  documents: ProjectDocument[]
-  milestones: Milestone[]
-  teamMembers: jsonb (nullable)
-  risks: jsonb (nullable)
-  faqs: jsonb (nullable)
-  viewCount: number (default: 0)
-  featured: boolean (default: false)
-  featuredOrder: number (nullable)
-  
-  // Due diligence
-  dueDiligenceStatus: enum [NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED] (default: NOT_STARTED)
-  dueDiligenceScore: number (nullable, 0-100)
-  assessorAssignedId: UUID (nullable, FK -> users)
-  
-  createdAt: Date
-  updatedAt: Date
-  deletedAt: Date (nullable)
-}
-```
+`PlatformRole.ASSESSOR` is the internal technical role. "Provider" remains only as a legacy display/business label where needed.
 
-### Milestone
-```typescript
-@Entity('milestones')
-class Milestone {
-  id: UUID (PK)
-  projectId: UUID (FK -> projects)
-  title: string
-  description: text (nullable)
-  order: number
-  status: enum [PENDING, IN_PROGRESS, COMPLETED, OVERDUE]
-  deliverables: jsonb (nullable)
-  fundingTranche: decimal (nullable)
-  dueDate: Date
-  completedAt: Date (nullable)
-  verifiedBy: UUID (nullable, FK -> users)
-  // ...timestamps
-}
-```
+## API Compatibility
 
-### Investment
-```typescript
-@Entity('investments')
-class Investment {
-  id: UUID (PK)
-  investorId: UUID (FK -> users)
-  projectId: UUID (FK -> projects)
-  amount: decimal
-  currency: string (default: 'USD')
-  status: enum [PENDING, CONFIRMED, CANCELLED, REFUNDED]
-  paymentMethod: enum [BANK_TRANSFER, CARD, CRYPTO, MOBILE_MONEY]
-  transactionReference: string (unique, nullable)
-  equityPercentage: decimal (nullable)
-  expectedReturns: decimal (nullable)
-  actualReturns: decimal (nullable, default: 0)
-  investedAt: Date
-  confirmedAt: Date (nullable)
-  // ...timestamps
-}
-```
+Existing high-level routes remain under `/api/v1`:
 
-### Transaction
-```typescript
-@Entity('transactions')
-class Transaction {
-  id: UUID (PK)
-  userId: UUID (FK -> users, nullable)
-  investmentId: UUID (FK -> investments, nullable)
-  projectId: UUID (FK -> projects, nullable)
-  type: enum [DEPOSIT, WITHDRAWAL, INVESTMENT, RETURN, FEE, REFUND]
-  amount: decimal
-  currency: string
-  status: enum [PENDING, COMPLETED, FAILED, CANCELLED]
-  paymentMethod: enum [BANK_TRANSFER, CARD, CRYPTO, MOBILE_MONEY]
-  paymentProvider: string (nullable, e.g. 'stripe', 'flutterwave')
-  providerTransactionId: string (nullable)
-  metadata: jsonb (nullable)
-  processedAt: Date (nullable)
-  // ...timestamps
-}
-```
+- `/auth`
+- `/users`
+- `/projects`
+- `/projects/:id/gallery`
+- `/milestones`
+- `/documents`
+- `/investments`
+- `/transactions`
+- `/due-diligence`
+- `/admin`
+- `/notifications`
+- `/messages`
 
-### DueDiligenceEngagement
-```typescript
-@Entity('due_diligence_engagements')
-class DueDiligenceEngagement {
-  id: UUID (PK)
-  projectId: UUID (FK -> projects)
-  providerId: UUID (FK -> users)
-  status: enum [ASSIGNED, IN_PROGRESS, UNDER_REVIEW, COMPLETED, REJECTED]
-  
-  // Assessment areas
-  financialAssessment: jsonb (score, findings, rating)
-  technicalAssessment: jsonb
-  legalAssessment: jsonb
-  esgAssessment: jsonb
-  marketAssessment: jsonb
-  overallScore: number (nullable, 0-100)
-  riskLevel: enum [LOW, MEDIUM, HIGH, CRITICAL] (nullable)
-  
-  // Timeline
-  assignedAt: Date
-  startedAt: Date (nullable)
-  submittedAt: Date (nullable)
-  reviewedAt: Date (nullable)
-  dueDate: Date
-  
-  // Documents
-  reportDocuments: jsonb (nullable)
-  
-  notes: text (nullable)
-  // ...timestamps
-}
-```
+Responses are DTO/plain-object responses, not raw persistence models.
 
-### ComplianceAlert
-```typescript
-@Entity('compliance_alerts')
-class ComplianceAlert {
-  id: UUID (PK)
-  type: enum [KYC_ISSUE, AML_FLAG, DOCUMENT_EXPIRY, REGULATORY_CHANGE, MANUAL_REVIEW]
-  severity: enum [LOW, MEDIUM, HIGH, CRITICAL]
-  entityType: enum [USER, PROJECT, TRANSACTION, PROVIDER]
-  entityId: UUID
-  title: string
-  description: text
-  status: enum [OPEN, UNDER_REVIEW, RESOLVED, DISMISSED] (default: OPEN)
-  assignedTo: UUID (nullable, FK -> users)
-  resolvedBy: UUID (nullable, FK -> users)
-  resolvedAt: Date (nullable)
-  resolutionNotes: text (nullable)
-  // ...timestamps
-}
-```
+## Implementation Rules
 
-### Dispute
-```typescript
-@Entity('disputes')
-class Dispute {
-  id: UUID (PK)
-  initiatorId: UUID (FK -> users)
-  respondentId: UUID (FK -> users, nullable)
-  projectId: UUID (FK -> projects, nullable)
-  investmentId: UUID (FK -> investments, nullable)
-  type: enum [PAYMENT, PROJECT_DELIVERY, FRAUD, COMMUNICATION, OTHER]
-  title: string
-  description: text
-  evidence: jsonb (nullable)
-  status: enum [OPEN, UNDER_REVIEW, MEDIATION, RESOLVED, ESCALATED, CLOSED]
-  resolution: text (nullable)
-  resolvedBy: UUID (nullable, FK -> users)
-  resolvedAt: Date (nullable)
-  // ...timestamps
-}
-```
+- PostgreSQL/Prisma is the source of truth.
+- Kafka is used for durable platform events via the outbox pattern.
+- Redis is not used for critical business workflows.
+- Object storage holds file bytes; PostgreSQL holds metadata.
+- Financial operations require idempotency.
+- Investment commitments create balanced double-entry ledger records.
+- Sensitive actions should write audit records as the platform matures.
+- Tenant and ownership checks are required for protected resource access.
 
-### AuditLog
-```typescript
-@Entity('audit_logs')
-class AuditLog {
-  id: UUID (PK)
-  userId: UUID (FK -> users, nullable)
-  action: string (e.g. 'USER_LOGIN', 'PROJECT_CREATED', 'INVESTMENT_MADE')
-  entityType: string (nullable)
-  entityId: UUID (nullable)
-  oldValues: jsonb (nullable)
-  newValues: jsonb (nullable)
-  ipAddress: string (nullable)
-  userAgent: string (nullable)
-  metadata: jsonb (nullable)
-  createdAt: Date
-}
-```
+## Verification
 
-### Notification
-```typescript
-@Entity('notifications')
-class Notification {
-  id: UUID (PK)
-  userId: UUID (FK -> users)
-  type: enum [PROJECT_UPDATE, INVESTMENT_UPDATE, DUE_DILIGENCE, COMPLIANCE, MESSAGE, SYSTEM]
-  title: string
-  message: text
-  data: jsonb (nullable)
-  read: boolean (default: false)
-  readAt: Date (nullable)
-  actionUrl: string (nullable)
-  // ...timestamps
-}
-```
+Required checks:
 
-### Message
-```typescript
-@Entity('messages')
-class Message {
-  id: UUID (PK)
-  senderId: UUID (FK -> users)
-  recipientId: UUID (FK -> users)
-  projectId: UUID (FK -> projects, nullable)
-  content: text
-  attachments: jsonb (nullable)
-  read: boolean (default: false)
-  readAt: Date (nullable)
-  // ...timestamps
-}
-```
-
-### RefreshToken
-```typescript
-@Entity('refresh_tokens')
-class RefreshToken {
-  id: UUID (PK)
-  userId: UUID (FK -> users)
-  token: string (hashed)
-  expiresAt: Date
-  createdAt: Date
-  revokedAt: Date (nullable)
-  replacedBy: string (nullable)
-  ipAddress: string (nullable)
-  userAgent: string (nullable)
-}
+```bash
+npm run lint
+npm run build
+npm test
+npm run prisma:validate
+npm run prisma:generate
 ```
 
 ## API Endpoints
@@ -491,12 +149,11 @@ class RefreshToken {
 | GET | `/due-diligence/engagements/:id` | Get engagement | PROVIDER/ADMIN |
 | POST | `/due-diligence/engagements` | Create engagement | ADMIN |
 | PATCH | `/due-diligence/engagements/:id` | Update engagement | PROVIDER/ADMIN |
+| POST | `/due-diligence/engagements/:id/start` | Start engagement | PROVIDER |
 | POST | `/due-diligence/engagements/:id/submit` | Submit report | PROVIDER |
 | POST | `/due-diligence/engagements/:id/review` | Review report | ADMIN |
 | GET | `/due-diligence/projects` | Available projects to assess | PROVIDER |
-| GET | `/due-diligence/projects/:id/assessments` | Get assessments | PROVIDER/ADMIN |
 | GET | `/due-diligence/assessors` | List assessors | ADMIN |
-| GET | `/due-diligence/assessors/:id` | Get assessor profile | ADMIN |
 | GET | `/due-diligence/stats/overview` | DD statistics | ADMIN |
 
 ### Admin Module (`/api/admin`)
@@ -581,7 +238,7 @@ class RefreshToken {
 4. **Helmet**: Security headers (HSTS, CSP, X-Frame-Options, etc.)
 5. **CORS**: Whitelist frontend URLs only
 6. **Input Validation**: class-validator on all DTOs
-7. **SQL Injection**: TypeORM parameterized queries
+7. **SQL Injection**: Prisma parameterized queries
 8. **Account Lockout**: 5 failed login attempts = 15min lockout
 9. **Token Blacklisting**: Refresh tokens tracked in DB, revoked on logout
 10. **Audit Logging**: All sensitive operations logged
