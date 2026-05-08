@@ -54,33 +54,6 @@
         "tags": []
       }
     },
-    "worker-webhooks": {
-      "name": "worker-webhooks",
-      "type": "app",
-      "data": {
-        "root": "apps/worker-webhooks",
-        "name": "worker-webhooks",
-        "$schema": "../../node_modules/nx/schemas/project-schema.json",
-        "sourceRoot": "apps/worker-webhooks/src",
-        "projectType": "application",
-        "targets": {
-          "build": {
-            "executor": "nx:run-commands",
-            "options": {
-              "command": "tsc -p apps/worker-webhooks/tsconfig.app.json"
-            },
-            "configurations": {},
-            "parallelism": true,
-            "cache": true,
-            "outputs": [
-              "{workspaceRoot}/dist/{projectRoot}"
-            ]
-          }
-        },
-        "implicitDependencies": [],
-        "tags": []
-      }
-    },
     "worker-events": {
       "name": "worker-events",
       "type": "app",
@@ -8672,7 +8645,6 @@
   "dependencies": {
     "worker-notifications": [],
     "worker-compliance": [],
-    "worker-webhooks": [],
     "worker-events": [],
     "worker-media": [],
     "scheduler": [],

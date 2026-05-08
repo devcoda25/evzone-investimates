@@ -1,4 +1,0 @@
-> tsc -p apps/api/tsconfig.app.json
-
-apps/api/src/modules/payments/kyc-kyb.service.ts(327,52): error TS2345: Argument of type '{ where: { id: string; }; select: { id: true; kycStatus: true; }; include: { memberships: { select: { tenantId: true; }; take: number; }; }; }' is not assignable to parameter of type 'SelectSubset<{ where: { id: string; }; select: { id: true; kycStatus: true; }; include: { memberships: { select: { tenantId: true; }; take: number; }; }; }, UserFindUniqueArgs<DefaultArgs>>'.
-  Type '{ where: { id: string; }; select: { id: true; kycStatus: true; }; include: { memberships: { select: { tenantId: true; }; take: number; }; }; }' is not assignable to type '"Please either choose `select` or `include`."'.

@@ -1,5 +1,0 @@
-> tsc -p apps/api/tsconfig.app.json
-
-apps/api/src/modules/users.module.ts(798,7): error TS2322: Type '{ notifications: unknown; }' is not assignable to type 'InputJsonValue | undefined'.
-  Types of property 'notifications' are incompatible.
-    Type 'unknown' is not assignable to type 'InputJsonValue | null | undefined'.

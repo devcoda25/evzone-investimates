@@ -1,2 +1,0 @@
-> tsc -p apps/worker-media/tsconfig.app.json
-

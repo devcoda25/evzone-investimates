@@ -1,2 +1,0 @@
-> tsc -p apps/api/tsconfig.app.json
-

@@ -1,18 +1,18 @@
 {
   "run": {
-    "command": "nx run worker-notifications:build",
-    "startTime": "2026-05-08T16:29:57.068Z",
-    "endTime": "2026-05-08T16:30:05.146Z",
+    "command": "nx build api",
+    "startTime": "2026-05-08T14:21:15.145Z",
+    "endTime": "2026-05-08T14:21:18.958Z",
     "inner": false
   },
   "tasks": [
     {
-      "taskId": "worker-notifications:build",
+      "taskId": "api:build",
       "target": "build",
-      "projectName": "worker-notifications",
-      "hash": "4483196893112430118",
-      "startTime": "2026-05-08T16:29:57.097Z",
-      "endTime": "2026-05-08T16:30:05.120Z",
+      "projectName": "api",
+      "hash": "2428122359161559273",
+      "startTime": "2026-05-08T14:21:15.162Z",
+      "endTime": "2026-05-08T14:21:18.957Z",
       "params": "",
       "cacheStatus": "cache-miss",
       "status": 0

@@ -380,6 +380,7 @@ model User {
   receivedMessages    Message[]          @relation("MessageRecipient")
   auditLogs           AuditLog[]
   disputes            Dispute[]
+  assignedTasks       DueDiligenceTask[] @relation("TaskAssignee")
   watchlistItems      WatchlistItem[]
   activityEvents      ActivityEvent[]
   paymentSchedules    PaymentSchedule[]
@@ -387,7 +388,6 @@ model User {
   governanceVoteCasts GovernanceVoteCast[]
   kycApplications     KycApplication[]
   kybApplications     KybApplication[]
-  assignedTasks       DueDiligenceTask[] @relation("TaskAssignee")
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
