@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Injectable,
@@ -17,11 +18,13 @@ import { Transform } from "class-transformer";
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 import {
   AssessorAvailability,
+  DueDiligenceCategory,
   DueDiligenceStatus,
   PlatformRole,
   Prisma,
   ProjectStatus,
   RiskRating,
+  TaskStatus,
 } from "@prisma/client";
 import {
   AuthenticatedUser,
@@ -113,6 +116,79 @@ class ReviewReportDto {
   notes?: string;
 }
 
+class CreateTaskDto {
+  @IsEnum(DueDiligenceCategory)
+  category!: DueDiligenceCategory;
+
+  @IsString()
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedToUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  dueAt?: string;
+}
+
+class UpdateTaskDto {
+  @IsOptional()
+  @IsEnum(DueDiligenceCategory)
+  category?: DueDiligenceCategory;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedToUserId?: string;
+
+  @IsOptional()
+  @IsString()
+  dueAt?: string;
+}
+
+class UpdateTaskStatusDto {
+  @IsEnum(TaskStatus)
+  status!: TaskStatus;
+}
+
+class SaveAssessmentsDto {
+  @IsOptional()
+  financialAssessment?: Prisma.InputJsonValue;
+
+  @IsOptional()
+  technicalAssessment?: Prisma.InputJsonValue;
+
+  @IsOptional()
+  legalAssessment?: Prisma.InputJsonValue;
+
+  @IsOptional()
+  esgAssessment?: Prisma.InputJsonValue;
+
+  @IsOptional()
+  marketAssessment?: Prisma.InputJsonValue;
+}
+
+class AttachEvidenceDto {
+  @IsString()
+  documentId!: string;
+
+  @IsOptional()
+  @IsString()
+  taskId?: string;
+}
+
 class AssessorFilterDto extends PaginationDto {
   @IsOptional()
   @IsEnum(AssessorAvailability)
@@ -184,6 +260,8 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     return this.toEngagementResponse(created);
@@ -213,6 +291,8 @@ class DueDiligenceService {
           project: true,
           assignedAssessor: { include: { user: true } },
           tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
         },
         orderBy: this.orderBy(filter.sortBy, filter.sortOrder),
         skip: (page - 1) * limit,
@@ -273,6 +353,8 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     return this.toEngagementResponse(updated);
@@ -293,6 +375,8 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     return this.toEngagementResponse(updated);
@@ -331,6 +415,8 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     return this.toEngagementResponse(updated);
@@ -353,6 +439,124 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
+      },
+    });
+    return this.toEngagementResponse(updated);
+  }
+
+  async createTask(
+    caseId: string,
+    dto: CreateTaskDto,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const engagement = await this.getCase(caseId);
+    this.assertCaseAccess(user, engagement);
+    const task = await this.prisma.dueDiligenceTask.create({
+      data: {
+        caseId,
+        category: dto.category,
+        title: dto.title,
+        notes: dto.notes,
+        assignedToUserId: dto.assignedToUserId,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+      },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
+    return this.toTaskResponse(task);
+  }
+
+  async updateTask(
+    taskId: string,
+    dto: UpdateTaskDto,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const task = await this.getTaskWithCase(taskId);
+    this.assertTaskAccess(user, task);
+    const updated = await this.prisma.dueDiligenceTask.update({
+      where: { id: taskId },
+      data: {
+        category: dto.category,
+        title: dto.title,
+        notes: dto.notes,
+        assignedToUserId: dto.assignedToUserId,
+        dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined,
+      },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
+    return this.toTaskResponse(updated);
+  }
+
+  async deleteTask(taskId: string, user: AuthenticatedUser): Promise<void> {
+    const task = await this.getTaskWithCase(taskId);
+    this.assertTaskAccess(user, task);
+    await this.prisma.dueDiligenceTask.delete({ where: { id: taskId } });
+  }
+
+  async updateTaskStatus(
+    taskId: string,
+    dto: UpdateTaskStatusDto,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const task = await this.getTaskWithCase(taskId);
+    this.assertTaskAccess(user, task);
+    this.assertValidTransition(task.status, dto.status);
+    const updated = await this.prisma.dueDiligenceTask.update({
+      where: { id: taskId },
+      data: { status: dto.status },
+      include: { assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } } },
+    });
+    return this.toTaskResponse(updated);
+  }
+
+  async attachEvidence(
+    caseId: string,
+    dto: AttachEvidenceDto,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const engagement = await this.getCase(caseId);
+    this.assertCaseAccess(user, engagement);
+    const document = await this.prisma.document.findUnique({
+      where: { id: dto.documentId },
+    });
+    if (!document) throw new NotFoundException("Document not found");
+    const updated = await this.prisma.document.update({
+      where: { id: dto.documentId },
+      data: {
+        dueDiligenceCaseId: caseId,
+        dueDiligenceTaskId: dto.taskId ?? null,
+      },
+    });
+    return updated;
+  }
+
+  async listEvidence(caseId: string): Promise<unknown[]> {
+    const documents = await this.prisma.document.findMany({
+      where: { dueDiligenceCaseId: caseId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    return documents;
+  }
+
+  async saveAssessments(
+    caseId: string,
+    dto: SaveAssessmentsDto,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const engagement = await this.getCase(caseId);
+    this.assertCaseAccess(user, engagement);
+    const updated = await this.prisma.dueDiligenceCase.update({
+      where: { id: caseId },
+      data: {
+        assessments: this.mergeAssessments(engagement.assessments, dto as unknown as UpdateEngagementDto),
+      },
+      include: {
+        project: true,
+        assignedAssessor: { include: { user: true } },
+        tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     return this.toEngagementResponse(updated);
@@ -434,6 +638,8 @@ class DueDiligenceService {
         project: true;
         assignedAssessor: { include: { user: true } };
         tasks: true;
+        evidenceDocuments: true;
+        evidenceMedia: true;
       };
     }>
   > {
@@ -443,10 +649,78 @@ class DueDiligenceService {
         project: true,
         assignedAssessor: { include: { user: true } },
         tasks: true,
+        evidenceDocuments: true,
+        evidenceMedia: true,
       },
     });
     if (!engagement) throw new NotFoundException("Engagement not found");
     return engagement;
+  }
+
+  private async getTaskWithCase(taskId: string): Promise<
+    Prisma.DueDiligenceTaskGetPayload<{
+      include: {
+        case: true;
+        assignedTo: { select: { id: true; firstName: true; lastName: true; email: true } };
+      };
+    }>
+  > {
+    const task = await this.prisma.dueDiligenceTask.findUnique({
+      where: { id: taskId },
+      include: {
+        case: true,
+        assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+    if (!task) throw new NotFoundException("Task not found");
+    return task;
+  }
+
+  private assertCaseAccess(
+    user: AuthenticatedUser,
+    engagement: Prisma.DueDiligenceCaseGetPayload<{
+      include: { assignedAssessor: { include: { user: true } }; tasks: true };
+    }>,
+  ): void {
+    if (
+      user.role !== PlatformRole.ADMIN &&
+      user.role !== PlatformRole.SUPER_ADMIN &&
+      engagement.assignedAssessorId !== user.id
+    ) {
+      throw new ForbiddenException("You do not have access to this engagement");
+    }
+  }
+
+  private assertTaskAccess(
+    user: AuthenticatedUser,
+    task: Prisma.DueDiligenceTaskGetPayload<{
+      include: { case: true; assignedTo: { select: { id: true } } };
+    }>,
+  ): void {
+    if (
+      user.role === PlatformRole.ADMIN ||
+      user.role === PlatformRole.SUPER_ADMIN
+    ) {
+      return;
+    }
+    if (task.case.assignedAssessorId !== user.id && task.assignedTo?.id !== user.id) {
+      throw new ForbiddenException("You do not have access to this task");
+    }
+  }
+
+  private assertValidTransition(current: TaskStatus, next: TaskStatus): void {
+    const allowed: Record<TaskStatus, TaskStatus[]> = {
+      [TaskStatus.OPEN]: [TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED],
+      [TaskStatus.IN_PROGRESS]: [TaskStatus.COMPLETED, TaskStatus.BLOCKED, TaskStatus.OPEN],
+      [TaskStatus.BLOCKED]: [TaskStatus.OPEN, TaskStatus.IN_PROGRESS],
+      [TaskStatus.COMPLETED]: [TaskStatus.IN_PROGRESS],
+      [TaskStatus.CANCELLED]: [],
+    };
+    if (!allowed[current].includes(next)) {
+      throw new BadRequestException(
+        `Invalid status transition from ${current} to ${next}`,
+      );
+    }
   }
 
   private normalizeStatus(status: string): DueDiligenceStatus {
@@ -506,6 +780,8 @@ class DueDiligenceService {
         project: true;
         assignedAssessor: { include: { user: true } };
         tasks: true;
+        evidenceDocuments: true;
+        evidenceMedia: true;
       };
     }>,
   ): Record<string, unknown> {
@@ -532,8 +808,32 @@ class DueDiligenceService {
       reportDocuments: engagement.finalReportDocumentId
         ? { documentId: engagement.finalReportDocumentId }
         : null,
+      evidenceDocuments: engagement.evidenceDocuments,
+      evidenceMedia: engagement.evidenceMedia,
       createdAt: engagement.createdAt,
       updatedAt: engagement.updatedAt,
+    };
+  }
+
+  private toTaskResponse(
+    task: Prisma.DueDiligenceTaskGetPayload<{
+      include: {
+        assignedTo: { select: { id: true; firstName: true; lastName: true; email: true } };
+      };
+    }>,
+  ): Record<string, unknown> {
+    return {
+      id: task.id,
+      caseId: task.caseId,
+      category: task.category,
+      title: task.title,
+      status: task.status,
+      assignedToUserId: task.assignedToUserId,
+      assignedTo: task.assignedTo,
+      dueAt: task.dueAt,
+      notes: task.notes,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
     };
   }
 }
@@ -624,6 +924,71 @@ class DueDiligenceController {
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
   getStats(): Promise<Record<string, unknown>> {
     return this.service.getStats();
+  }
+
+  @Post("engagements/:id/tasks")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  createTask(
+    @Param("id") caseId: string,
+    @Body() dto: CreateTaskDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.service.createTask(caseId, dto, user);
+  }
+
+  @Patch("tasks/:taskId")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateTask(
+    @Param("taskId") taskId: string,
+    @Body() dto: UpdateTaskDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.service.updateTask(taskId, dto, user);
+  }
+
+  @Post("tasks/:taskId/status")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateTaskStatus(
+    @Param("taskId") taskId: string,
+    @Body() dto: UpdateTaskStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.service.updateTaskStatus(taskId, dto, user);
+  }
+
+  @Delete("tasks/:taskId")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  deleteTask(
+    @Param("taskId") taskId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.service.deleteTask(taskId, user);
+  }
+
+  @Post("engagements/:id/evidence")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  attachEvidence(
+    @Param("id") caseId: string,
+    @Body() dto: AttachEvidenceDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.service.attachEvidence(caseId, dto, user);
+  }
+
+  @Get("engagements/:id/evidence")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  listEvidence(@Param("id") caseId: string): Promise<unknown[]> {
+    return this.service.listEvidence(caseId);
+  }
+
+  @Post("engagements/:id/assessments")
+  @Roles(PlatformRole.ASSESSOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  saveAssessments(
+    @Param("id") caseId: string,
+    @Body() dto: SaveAssessmentsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.service.saveAssessments(caseId, dto, user);
   }
 }
 
