@@ -30,7 +30,7 @@ async function bootstrap() {
   const corsOrigins = [
     configService.get('app.frontendInvestorUrl'),
     configService.get('app.frontendEntrepreneurUrl'),
-    configService.get('app.frontendProviderUrl'),
+    configService.get('app.frontendAssessorUrl'),
     configService.get('app.frontendAdminUrl'),
   ].filter(Boolean);
 

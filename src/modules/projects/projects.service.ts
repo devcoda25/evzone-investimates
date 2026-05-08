@@ -387,10 +387,10 @@ export class ProjectsService {
     if (!milestone) throw new NotFoundException('Milestone not found');
 
     const isOwner = milestone.project.entrepreneurId === user.id;
-    const isProvider = user.role === UserRole.PROVIDER;
+    const isAssessor = user.role === UserRole.ASSESSOR;
     const isAdmin = user.role === UserRole.ADMIN;
 
-    if (!isOwner && !isProvider && !isAdmin) {
+    if (!isOwner && !isAssessor && !isAdmin) {
       throw new ForbiddenException('You are not authorized to complete this milestone');
     }
 

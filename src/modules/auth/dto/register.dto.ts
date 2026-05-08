@@ -64,7 +64,7 @@ export class RegisterDto {
     example: UserRole.INVESTOR,
     enumName: 'UserRole',
   })
-  @IsEnum(UserRole, { message: 'Role must be one of: INVESTOR, ENTREPRENEUR, PROVIDER' })
+  @IsEnum(UserRole, { message: 'Role must be one of: INVESTOR, ENTREPRENEUR, ASSESSOR' })
   role: UserRole;
 
   @ApiPropertyOptional({ description: 'Country of residence', example: 'United States' })

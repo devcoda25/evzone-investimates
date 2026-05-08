@@ -75,6 +75,8 @@ export enum TransactionStatus {
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
   CANCELLED = 'CANCELLED',
+  FLAGGED = 'FLAGGED',
+  ESCROW = 'ESCROW',
 }
 
 export enum PaymentMethod {

@@ -59,6 +59,30 @@ export class CreateTransactionDto {
   @MaxLength(255)
   providerTransactionId?: string;
 
+  @ApiPropertyOptional({ description: 'From party name' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  fromParty?: string;
+
+  @ApiPropertyOptional({ description: 'To party name' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  toParty?: string;
+
+  @ApiPropertyOptional({ description: 'Risk score (0-100)' })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  riskScore?: number;
+
+  @ApiPropertyOptional({ description: 'Jurisdiction' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  jurisdiction?: string;
+
   @ApiPropertyOptional({ description: 'Additional metadata' })
   @IsOptional()
   metadata?: Record<string, any>;

@@ -74,6 +74,13 @@ export class DocumentsService {
     return doc;
   }
 
+  async findByUser(userId: string): Promise<DocumentMeta[]> {
+    const meta = await this.readMeta();
+    return meta
+      .filter((d) => d.uploadedBy === userId && !d.deletedAt)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
   async findById(id: string): Promise<DocumentMeta> {
     const meta = await this.readMeta();
     const doc = meta.find((d) => d.id === id && !d.deletedAt);

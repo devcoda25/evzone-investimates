@@ -40,6 +40,18 @@ export class Transaction {
   @Column({ type: 'varchar', length: 255, nullable: true })
   providerTransactionId: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  fromParty: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  toParty: string;
+
+  @Column({ type: 'int', nullable: true })
+  riskScore: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  jurisdiction: string;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 

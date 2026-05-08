@@ -422,7 +422,7 @@ export class AdminService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // PROVIDERS
+  // ASSESSORS
   // ─────────────────────────────────────────────────────────────
 
   async findAssessors(filter: PaginationDto): Promise<PaginatedResponse<AssessorProfile>> {

@@ -214,6 +214,21 @@ export class TransactionsController {
     return this.investmentsService.findTransactions(userId, filter);
   }
 
+  @Get(':id/related')
+  @ApiOperation({ summary: 'Get related transactions by project' })
+  @ApiResponse({ status: 200, description: 'Related transactions returned' })
+  async findRelatedTransactions(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') userRole: UserRole,
+  ) {
+    const transaction = await this.investmentsService.findTransactionById(id);
+    if (transaction.userId !== userId && userRole !== UserRole.ADMIN) {
+      throw new ForbiddenException('You can only view your own transactions');
+    }
+    return this.investmentsService.findRelatedTransactions(transaction.projectId, id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get transaction by ID' })
   @ApiResponse({ status: 200, description: 'Transaction details' })
@@ -250,6 +265,52 @@ export class TransactionsController {
     @Body() dto: WithdrawalDto,
   ) {
     return this.investmentsService.withdraw(userId, dto);
+  }
+
+  @Post(':id/approve')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve a pending transaction (admin only)' })
+  @ApiResponse({ status: 200, description: 'Transaction approved' })
+  async approveTransaction(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.investmentsService.approveTransaction(id);
+  }
+
+  @Post(':id/hold')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Hold a transaction (admin only)' })
+  @ApiResponse({ status: 200, description: 'Transaction held' })
+  async holdTransaction(
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.investmentsService.holdTransaction(id);
+  }
+
+  @Post(':id/escalate')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Escalate a transaction (admin only)' })
+  @ApiResponse({ status: 200, description: 'Transaction escalated' })
+  async escalateTransaction(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('notes') notes?: string,
+  ) {
+    return this.investmentsService.escalateTransaction(id, notes);
+  }
+
+  @Post(':id/reverse')
+  @Roles(UserRole.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reverse a transaction (admin only)' })
+  @ApiResponse({ status: 200, description: 'Transaction reversed' })
+  async reverseTransaction(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.investmentsService.reverseTransaction(id, reason);
   }
 
   @Post(':id/process')

@@ -45,6 +45,18 @@ export class AssessorProfile {
   @Column({ type: 'text', nullable: true })
   bio: string;
 
+  @Column({ type: 'timestamp', nullable: true })
+  licenseExpiry: Date;
+
+  @Column({ type: 'boolean', default: false })
+  insuranceValid: boolean;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  tier: string;
+
+  @Column({ type: 'int', default: 0 })
+  avgTurnaround: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

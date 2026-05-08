@@ -20,7 +20,7 @@ export class AuthService {
   async getMe(userId: string): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['investorProfile', 'entrepreneurProfile', 'providerProfile'],
+      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
       select: [
         'id',
         'email',

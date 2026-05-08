@@ -24,6 +24,13 @@ import { DocumentsService } from './documents.service';
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
+  @Get()
+  @ApiOperation({ summary: 'List my documents' })
+  @ApiResponse({ status: 200, description: 'Documents returned' })
+  async findByUser(@CurrentUser('id') userId: string) {
+    return this.documentsService.findByUser(userId);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')

@@ -788,6 +788,14 @@ export class InvestmentsService {
       query.andWhere('transaction.amount <= :maxAmount', { maxAmount });
     }
 
+    if (filter.maxRiskScore !== undefined) {
+      query.andWhere('transaction.riskScore <= :maxRiskScore', { maxRiskScore: filter.maxRiskScore });
+    }
+
+    if (filter.jurisdiction) {
+      query.andWhere('transaction.jurisdiction = :jurisdiction', { jurisdiction: filter.jurisdiction });
+    }
+
     query.orderBy(`transaction.${sortBy}`, sortOrder);
 
     const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
@@ -861,6 +869,49 @@ export class InvestmentsService {
     transaction.processedAt = new Date();
 
     return this.transactionRepo.save(transaction);
+  }
+
+  async approveTransaction(id: string): Promise<Transaction> {
+    const transaction = await this.findTransactionById(id);
+    if (transaction.status !== TransactionStatus.PENDING) {
+      throw new BadRequestException('Only pending transactions can be approved');
+    }
+    transaction.status = TransactionStatus.COMPLETED;
+    transaction.processedAt = new Date();
+    return this.transactionRepo.save(transaction);
+  }
+
+  async holdTransaction(id: string): Promise<Transaction> {
+    const transaction = await this.findTransactionById(id);
+    if (transaction.status !== TransactionStatus.PENDING && transaction.status !== TransactionStatus.COMPLETED) {
+      throw new BadRequestException('Only pending or completed transactions can be held');
+    }
+    transaction.status = TransactionStatus.PENDING;
+    transaction.processedAt = undefined as any;
+    return this.transactionRepo.save(transaction);
+  }
+
+  async escalateTransaction(id: string, notes?: string): Promise<Transaction> {
+    const transaction = await this.findTransactionById(id);
+    transaction.metadata = { ...(transaction.metadata || {}), escalated: true, escalationNotes: notes, escalatedAt: new Date().toISOString() };
+    return this.transactionRepo.save(transaction);
+  }
+
+  async reverseTransaction(id: string, reason?: string): Promise<Transaction> {
+    const transaction = await this.findTransactionById(id);
+    if (transaction.status === TransactionStatus.CANCELLED) {
+      throw new BadRequestException('Transaction is already cancelled');
+    }
+    transaction.status = TransactionStatus.CANCELLED;
+    transaction.metadata = { ...(transaction.metadata || {}), reversed: true, reversalReason: reason, reversedAt: new Date().toISOString() };
+    return this.transactionRepo.save(transaction);
+  }
+
+  async findRelatedTransactions(projectId: string, excludeId: string): Promise<Transaction[]> {
+    return this.transactionRepo.find({
+      where: { projectId },
+      order: { createdAt: 'DESC' },
+    }).then(txs => txs.filter(t => t.id !== excludeId));
   }
 
   async getTransactionStats(): Promise<TransactionStatsDto> {

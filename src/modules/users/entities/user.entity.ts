@@ -60,6 +60,9 @@ export class User {
   @Column({ type: 'text', nullable: true })
   bio: string;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  riskLevel: string;
+
   @Column({ type: 'jsonb', nullable: true })
   preferences: Record<string, any>;
 

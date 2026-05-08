@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import { User } from '../../modules/users/entities';
 import {
-  InvestorProfile, EntrepreneurProfile, ProviderProfile
+  InvestorProfile, EntrepreneurProfile, AssessorProfile
 } from '../../modules/users/entities';
 import {
   UserRole, UserStatus, KycStatus,
@@ -46,7 +46,7 @@ async function seed() {
   const userRepo = dataSource.getRepository(User);
   const investorRepo = dataSource.getRepository(InvestorProfile);
   const entrepreneurRepo = dataSource.getRepository(EntrepreneurProfile);
-  const providerRepo = dataSource.getRepository(ProviderProfile);
+  const assessorRepo = dataSource.getRepository(AssessorProfile);
   const projectRepo = dataSource.getRepository(Project);
   const milestoneRepo = dataSource.getRepository(Milestone);
   const investmentRepo = dataSource.getRepository(Investment);
@@ -76,6 +76,7 @@ async function seed() {
       country: 'United States',
       city: 'New York',
       bio: 'Platform administrator with full oversight access.',
+      riskLevel: 'low',
       preferences: { theme: 'dark', language: 'en', notifications: { email: true, push: true } },
     },
     // Investor 1
@@ -90,6 +91,7 @@ async function seed() {
       country: 'Singapore',
       city: 'Singapore',
       bio: 'Impact investor focused on renewable energy in emerging markets.',
+      riskLevel: 'low',
       preferences: { theme: 'light', language: 'en', notifications: { email: true, push: false } },
     },
     // Investor 2
@@ -104,6 +106,7 @@ async function seed() {
       country: 'United Kingdom',
       city: 'London',
       bio: 'Institutional investor specializing in green infrastructure.',
+      riskLevel: 'low',
       preferences: { theme: 'light', language: 'en', notifications: { email: true, push: true } },
     },
     // Entrepreneur 1
@@ -118,6 +121,7 @@ async function seed() {
       country: 'Kenya',
       city: 'Nairobi',
       bio: 'Founder of GreenGrid Solar. Building solar infrastructure across East Africa.',
+      riskLevel: 'low',
       preferences: { theme: 'light', language: 'en', notifications: { email: true, push: true } },
     },
     // Entrepreneur 2
@@ -132,34 +136,37 @@ async function seed() {
       country: 'India',
       city: 'Mumbai',
       bio: 'Clean energy entrepreneur working on wind farm projects.',
+      riskLevel: 'medium',
       preferences: { theme: 'dark', language: 'en', notifications: { email: false, push: true } },
     },
-    // Provider 1
+    // Assessor 1
     {
       email: 'dr.kwame@email.com',
       password: hash('Provider123!'),
       firstName: 'Dr. Kwame',
       lastName: 'Asante',
-      role: UserRole.PROVIDER,
+      role: UserRole.ASSESSOR,
       status: UserStatus.ACTIVE,
       kycStatus: KycStatus.VERIFIED,
       country: 'Ghana',
       city: 'Accra',
       bio: 'ESG audit specialist with 15 years experience in African energy projects.',
+      riskLevel: 'low',
       preferences: { theme: 'light', language: 'en', notifications: { email: true, push: true } },
     },
-    // Provider 2
+    // Assessor 2
     {
       email: 'elena.muller@email.com',
       password: hash('Provider123!'),
       firstName: 'Elena',
       lastName: 'Muller',
-      role: UserRole.PROVIDER,
+      role: UserRole.ASSESSOR,
       status: UserStatus.ACTIVE,
       kycStatus: KycStatus.VERIFIED,
       country: 'Germany',
       city: 'Berlin',
       bio: 'Technical assessment expert specializing in renewable energy systems.',
+      riskLevel: 'low',
       preferences: { theme: 'dark', language: 'en', notifications: { email: true, push: false } },
     },
     // Investor 3 (pending)
@@ -173,6 +180,7 @@ async function seed() {
       kycStatus: KycStatus.NOT_STARTED,
       country: 'Brazil',
       city: 'Sao Paulo',
+      riskLevel: 'medium',
       preferences: { theme: 'light', language: 'en' },
     },
   ] as User[]);
@@ -255,7 +263,7 @@ async function seed() {
     },
   ] as any);
 
-  await providerRepo.save([
+  await assessorRepo.save([
     {
       userId: kwame.id,
       organizationName: 'Asante Consulting Group',
@@ -268,6 +276,10 @@ async function seed() {
       availabilityStatus: 'AVAILABLE',
       hourlyRate: 150,
       serviceRegions: ['West Africa', 'East Africa'],
+      licenseExpiry: new Date('2026-03-15'),
+      insuranceValid: true,
+      tier: 'Gold',
+      avgTurnaround: 18,
     },
     {
       userId: elena.id,
@@ -281,6 +293,10 @@ async function seed() {
       availabilityStatus: 'AVAILABLE',
       hourlyRate: 200,
       serviceRegions: ['Europe', 'Africa', 'Asia'],
+      licenseExpiry: new Date('2025-12-01'),
+      insuranceValid: true,
+      tier: 'Gold',
+      avgTurnaround: 22,
     },
   ] as any);
   console.log('Created profiles');
@@ -298,6 +314,18 @@ async function seed() {
       longDescription: 'The Machakos Solar Farm represents a major step forward in Kenya\'s renewable energy transition. Located on 120 acres of semi-arid land, this 25MW installation will utilize bifacial solar panels with single-axis tracking to maximize energy yield. The project includes a 33kV substation and 10km transmission line to connect to the national grid. Community benefits include a dedicated education fund, agricultural training programs, and priority hiring for local residents.',
       coverImage: '/assets/projects/machakos-solar.jpg',
       galleryImages: ['/assets/projects/machakos-1.jpg', '/assets/projects/machakos-2.jpg'],
+      impactVideo: '/assets/projects/machakos-impact.mp4',
+      story: {
+        problem: 'Machakos County experiences frequent power outages and 40% of households lack grid access. Diesel generators cost families $80/month.',
+        solution: 'A 25MW solar farm with single-axis tracking bifacial panels, connected to the national grid via a 33kV substation.',
+        journey: 'Phase I (10MW) completed in 2023, exceeding targets by 12%. Phase II expands capacity to 25MW.',
+        vision: 'By 2030, power 500,000 households across Eastern Kenya with 200MW of solar capacity.',
+      },
+      valuation: 8500000,
+      structure: 'Equity',
+      returnTarget: 14.5,
+      coordinates: '-1.5177, 37.2634',
+      locationDescription: 'Located on 120 acres of semi-arid land in Machakos County, 60km southeast of Nairobi.',
       status: ProjectStatus.ACTIVE,
       fundingGoal: 1200000,
       fundingRaised: 892000,
@@ -338,6 +366,8 @@ async function seed() {
       minInvestment: 250,
       currency: 'USD',
       equityOffered: 12.0,
+      structure: 'Blended Finance',
+      returnTarget: 12.0,
       country: 'Kenya',
       city: 'Ngong',
       sector: ProjectSector.WIND,
@@ -536,9 +566,13 @@ async function seed() {
   // TRANSACTIONS
   // ============================================
   await transactionRepo.save([
-    { userId: sarah.id, investmentId: undefined, type: TransactionType.DEPOSIT, amount: 250000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', processedAt: new Date('2025-01-10') },
-    { userId: marcus.id, investmentId: undefined, type: TransactionType.DEPOSIT, amount: 1000000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', processedAt: new Date('2025-01-08') },
-    { userId: amina.id, investmentId: undefined, type: TransactionType.DEPOSIT, amount: 50000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', processedAt: new Date('2025-01-05') },
+    { userId: sarah.id, type: TransactionType.DEPOSIT, amount: 250000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Sarah Chen', toParty: 'Platform Escrow', riskScore: 15, jurisdiction: 'Singapore', processedAt: new Date('2025-01-10') },
+    { userId: marcus.id, type: TransactionType.DEPOSIT, amount: 1000000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Marcus Johnson', toParty: 'Platform Escrow', riskScore: 10, jurisdiction: 'United Kingdom', processedAt: new Date('2025-01-08') },
+    { userId: amina.id, type: TransactionType.DEPOSIT, amount: 50000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Amina Osei', toParty: 'Platform Escrow', riskScore: 20, jurisdiction: 'Kenya', processedAt: new Date('2025-01-05') },
+    { userId: sarah.id, projectId: projects[0].id, type: TransactionType.INVESTMENT, amount: 50000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Sarah Chen', toParty: 'GreenGrid Solar Escrow', riskScore: 15, jurisdiction: 'Kenya', processedAt: new Date('2025-01-22') },
+    { userId: marcus.id, projectId: projects[0].id, type: TransactionType.INVESTMENT, amount: 125000, currency: 'USD', status: TransactionStatus.COMPLETED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Marcus Johnson', toParty: 'GreenGrid Solar Escrow', riskScore: 10, jurisdiction: 'Kenya', processedAt: new Date('2025-01-27') },
+    { userId: sarah.id, projectId: projects[7].id, type: TransactionType.INVESTMENT, amount: 75000, currency: 'USD', status: TransactionStatus.FLAGGED, paymentMethod: 'BANK_TRANSFER', fromParty: 'Sarah Chen', toParty: 'Texas Solar Escrow', riskScore: 65, jurisdiction: 'United States', processedAt: new Date('2025-04-01') },
+    { userId: marcus.id, projectId: projects[7].id, type: TransactionType.INVESTMENT, amount: 500000, currency: 'USD', status: TransactionStatus.ESCROW, paymentMethod: 'BANK_TRANSFER', fromParty: 'Marcus Johnson', toParty: 'Texas Solar Escrow', riskScore: 45, jurisdiction: 'United States', processedAt: new Date('2025-04-05') },
   ] as Transaction[]);
   console.log('Created transactions');
 
@@ -609,8 +643,8 @@ async function seed() {
   // DISPUTES
   // ============================================
   await disputeRepo.save([
-    { initiatorId: sarah.id, respondentId: amina.id, projectId: projects[0].id, type: DisputeType.COMMUNICATION, title: 'Milestone Update Delay', description: 'Investor requests more frequent milestone updates than currently provided.', status: DisputeStatus.UNDER_REVIEW },
-    { initiatorId: marcus.id, projectId: projects[7].id, type: DisputeType.PAYMENT, title: 'Tax Documentation Request', description: 'Investor requesting additional tax documentation for large investment.', status: DisputeStatus.MEDIATION },
+    { initiatorId: sarah.id, respondentId: amina.id, projectId: projects[0].id, type: DisputeType.COMMUNICATION, title: 'Milestone Update Delay', description: 'Investor requests more frequent milestone updates than currently provided.', status: DisputeStatus.UNDER_REVIEW, priority: 'medium', financialImpact: 0 },
+    { initiatorId: marcus.id, projectId: projects[7].id, type: DisputeType.PAYMENT, title: 'Tax Documentation Request', description: 'Investor requesting additional tax documentation for large investment.', status: DisputeStatus.MEDIATION, priority: 'high', financialImpact: 12500 },
   ] as Dispute[]);
   console.log('Created disputes');
 
@@ -653,7 +687,7 @@ async function seed() {
   console.log('\n=================================================');
   console.log('  Seeding complete!');
   console.log('  Created:');
-  console.log('    - 8 users (admin, 3 investors, 2 entrepreneurs, 2 providers)');
+  console.log('    - 8 users (admin, 3 investors, 2 entrepreneurs, 2 assessors)');
   console.log('    - 9 projects across 6 countries');
   console.log('    - 8 milestones');
   console.log('    - 10 investments');

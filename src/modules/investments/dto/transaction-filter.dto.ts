@@ -1,4 +1,4 @@
-import { IsOptional, IsEnum, IsUUID, IsDateString, IsNumber } from 'class-validator';
+import { IsOptional, IsEnum, IsUUID, IsDateString, IsNumber, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TransactionType, TransactionStatus } from '@common/enums';
@@ -51,4 +51,15 @@ export class TransactionFilterDto extends PaginationDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Type(() => Number)
   maxAmount?: number;
+
+  @ApiPropertyOptional({ description: 'Maximum risk score' })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  maxRiskScore?: number;
+
+  @ApiPropertyOptional({ description: 'Jurisdiction' })
+  @IsOptional()
+  @IsString()
+  jurisdiction?: string;
 }

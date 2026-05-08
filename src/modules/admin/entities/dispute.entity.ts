@@ -37,6 +37,12 @@ export class Dispute {
   @Column({ type: 'enum', enum: DisputeStatus, default: DisputeStatus.OPEN })
   status: DisputeStatus;
 
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  priority: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  financialImpact: number;
+
   @Column({ type: 'text', nullable: true })
   resolution: string;
 

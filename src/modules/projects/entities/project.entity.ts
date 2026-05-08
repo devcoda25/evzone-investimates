@@ -38,6 +38,27 @@ export class Project {
   @Column({ type: 'varchar', length: 500, nullable: true })
   videoUrl: string;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  impactVideo: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  story: { problem: string; solution: string; journey: string; vision: string };
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  valuation: number;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  structure: string;
+
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  returnTarget: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  coordinates: string;
+
+  @Column({ type: 'text', nullable: true })
+  locationDescription: string;
+
   @Column({ type: 'enum', enum: ProjectStatus, default: ProjectStatus.DRAFT })
   status: ProjectStatus;
 

@@ -87,14 +87,14 @@ export class DueDiligenceService {
     // Update project's due diligence status and assigned provider
     await this.projectRepo.update(dto.projectId, {
       dueDiligenceStatus: 'ASSIGNED',
-      providerAssignedId: dto.providerId,
+      assessorAssignedId: dto.providerId,
     });
 
     return this.findEngagementById((saved as DueDiligenceEngagement).id);
   }
 
   /**
-   * List engagements with filtering (PROVIDER sees own, ADMIN sees all)
+   * List engagements with filtering (ASSESSOR sees own, ADMIN sees all)
    */
   async findEngagements(
     filter: EngagementFilterDto,
@@ -191,7 +191,7 @@ export class DueDiligenceService {
   }
 
   /**
-   * Update engagement status/notes (PROVIDER/ADMIN)
+   * Update engagement status/notes (ASSESSOR/ADMIN)
    */
   async updateEngagement(
     id: string,
@@ -246,7 +246,7 @@ export class DueDiligenceService {
   }
 
   /**
-   * Start engagement (PROVIDER only) - sets status to IN_PROGRESS
+   * Start engagement (ASSESSOR only) - sets status to IN_PROGRESS
    */
   async startEngagement(
     id: string,
@@ -276,7 +276,7 @@ export class DueDiligenceService {
   }
 
   /**
-   * Submit report (PROVIDER only)
+   * Submit report (ASSESSOR only)
    */
   async submitReport(
     id: string,
