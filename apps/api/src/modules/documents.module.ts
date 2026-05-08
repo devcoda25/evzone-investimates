@@ -152,7 +152,7 @@ class DocumentsService {
 
   async findByProject(
     projectId: string,
-    user: AuthenticatedUser,
+    _user: AuthenticatedUser,
   ): Promise<DocumentResponse[]> {
     const documents = await this.prisma.document.findMany({
       where: { projectId, deletedAt: null },

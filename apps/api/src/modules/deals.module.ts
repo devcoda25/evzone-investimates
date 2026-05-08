@@ -2,10 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
-  HttpCode,
-  HttpStatus,
   Injectable,
   Module,
   NotFoundException,
@@ -26,6 +25,8 @@ import {
 import {
   DealStatus,
   InvestmentStatus,
+  LedgerDirection,
+  LedgerOwnerType,
   PaymentMethod,
   PlatformRole,
   Prisma,
@@ -34,6 +35,7 @@ import {
   TransactionType,
 } from "@prisma/client";
 import {
+  assertBalancedLedgerDraft,
   AuthenticatedUser,
   CurrentUser,
   getLimit,
@@ -45,6 +47,7 @@ import {
   toPaginationMeta,
 } from "@evzone/common";
 import { PrismaService, TransactionService } from "@evzone/database";
+import { OutboxService } from "@evzone/events";
 import { PermissionsService } from "@evzone/permissions";
 
 class DealFilterDto extends PaginationDto {
@@ -175,6 +178,7 @@ class DealsService {
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionService,
     private readonly permissions: PermissionsService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async create(
@@ -275,7 +279,7 @@ class DealsService {
     return this.toResponse(updated);
   }
 
-  async approve(id: string, user: AuthenticatedUser): Promise<DealResponse> {
+  async approve(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -292,7 +296,7 @@ class DealsService {
     return this.toResponse(updated);
   }
 
-  async open(id: string, user: AuthenticatedUser): Promise<DealResponse> {
+  async open(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -309,7 +313,7 @@ class DealsService {
     return this.toResponse(updated);
   }
 
-  async pause(id: string, user: AuthenticatedUser): Promise<DealResponse> {
+  async pause(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -329,7 +333,7 @@ class DealsService {
   async close(
     id: string,
     successful: boolean,
-    user: AuthenticatedUser,
+    _user: AuthenticatedUser,
   ): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
@@ -351,6 +355,66 @@ class DealsService {
       include: { project: true, investments: true },
     });
     return this.toResponse(updated);
+  }
+
+  async submit(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id },
+      include: { project: true, investments: true },
+    });
+    if (!deal) throw new NotFoundException("Deal not found");
+    if (deal.status !== DealStatus.DRAFT) {
+      throw new BadRequestException("Only draft deals can be submitted for compliance review");
+    }
+    const updated = await this.prisma.deal.update({
+      where: { id },
+      data: { status: DealStatus.COMPLIANCE_REVIEW },
+      include: { project: true, investments: true },
+    });
+    return this.toResponse(updated);
+  }
+
+  async reject(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id },
+      include: { project: true, investments: true },
+    });
+    if (!deal) throw new NotFoundException("Deal not found");
+    if (deal.status !== DealStatus.COMPLIANCE_REVIEW) {
+      throw new BadRequestException("Only deals under compliance review can be rejected");
+    }
+    const updated = await this.prisma.deal.update({
+      where: { id },
+      data: { status: DealStatus.CANCELLED },
+      include: { project: true, investments: true },
+    });
+    return this.toResponse(updated);
+  }
+
+  async resume(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+    const deal = await this.prisma.deal.findUnique({
+      where: { id },
+      include: { project: true, investments: true },
+    });
+    if (!deal) throw new NotFoundException("Deal not found");
+    if (deal.status !== DealStatus.PAUSED) {
+      throw new BadRequestException("Only paused deals can be resumed");
+    }
+    const updated = await this.prisma.deal.update({
+      where: { id },
+      data: { status: DealStatus.LIVE },
+      include: { project: true, investments: true },
+    });
+    return this.toResponse(updated);
+  }
+
+  async remove(id: string): Promise<void> {
+    const deal = await this.prisma.deal.findUnique({ where: { id } });
+    if (!deal) throw new NotFoundException("Deal not found");
+    await this.prisma.deal.update({
+      where: { id },
+      data: { status: DealStatus.CANCELLED },
+    });
   }
 
   async invest(
@@ -397,7 +461,7 @@ class DealsService {
         },
         include: { project: true, investor: true },
       });
-      await tx.transaction.create({
+      const transaction = await tx.transaction.create({
         data: {
           tenantId: deal.tenantId,
           userId: investor.id,
@@ -411,9 +475,40 @@ class DealsService {
           jurisdiction: deal.project.countryCode,
         },
       });
+      const newFundingRaised =
+        Number(deal.project.fundingRaised) + dto.amount;
       await tx.project.update({
         where: { id: deal.projectId },
-        data: { fundingRaised: { increment: dto.amount } },
+        data: {
+          fundingRaised: { increment: dto.amount },
+          status:
+            newFundingRaised >= Number(deal.project.fundingTarget)
+              ? ProjectStatus.FUNDED
+              : deal.project.status,
+        },
+      });
+      await this.postCommitmentLedger(
+        tx,
+        deal.tenantId,
+        investor.id,
+        deal.projectId,
+        transaction.id,
+        dto.amount,
+        dto.currency ?? deal.currency,
+      );
+      await this.outbox.create(tx, {
+        tenantId: deal.tenantId,
+        topic: "investment.created",
+        eventType: "investment.created",
+        aggregateType: "investment",
+        aggregateId: investment.id,
+        payload: {
+          investmentId: investment.id,
+          dealId: deal.id,
+          projectId: deal.projectId,
+          investorUserId: investor.id,
+          amount: dto.amount,
+        },
       });
       return investment;
     });
@@ -428,6 +523,81 @@ class DealsService {
       idempotencyKey: created.idempotencyKey,
       createdAt: created.createdAt,
     };
+  }
+
+  private async postCommitmentLedger(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    investorUserId: string,
+    projectId: string,
+    transactionId: string,
+    amount: number,
+    currency: string,
+  ): Promise<void> {
+    const investorAccount = await tx.ledgerAccount.upsert({
+      where: {
+        tenantId_ownerType_ownerId_currency_name: {
+          tenantId,
+          ownerType: LedgerOwnerType.USER,
+          ownerId: investorUserId,
+          currency,
+          name: "Investor Cash Pending",
+        },
+      },
+      create: {
+        tenantId,
+        ownerType: LedgerOwnerType.USER,
+        ownerId: investorUserId,
+        currency,
+        name: "Investor Cash Pending",
+      },
+      update: {},
+    });
+    const escrowAccount = await tx.ledgerAccount.upsert({
+      where: {
+        tenantId_ownerType_ownerId_currency_name: {
+          tenantId,
+          ownerType: LedgerOwnerType.PROJECT,
+          ownerId: projectId,
+          currency,
+          name: "Escrow Liability",
+        },
+      },
+      create: {
+        tenantId,
+        ownerType: LedgerOwnerType.PROJECT,
+        ownerId: projectId,
+        currency,
+        name: "Escrow Liability",
+      },
+      update: {},
+    });
+    assertBalancedLedgerDraft([
+      { direction: "DEBIT", amount },
+      { direction: "CREDIT", amount },
+    ]);
+    await tx.ledgerEntry.createMany({
+      data: [
+        {
+          tenantId,
+          accountId: investorAccount.id,
+          transactionId,
+          direction: LedgerDirection.DEBIT,
+          amount,
+          currency,
+          memo: "Investment commitment pending",
+        },
+        {
+          tenantId,
+          accountId: escrowAccount.id,
+          transactionId,
+          direction: LedgerDirection.CREDIT,
+          amount,
+          currency,
+          memo: "Escrow liability pending",
+        },
+      ],
+    });
   }
 
   private toResponse(
@@ -545,6 +715,39 @@ class DealsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DealResponse> {
     return this.dealsService.close(id, successful, user);
+  }
+
+  @Post(":id/submit")
+  @Roles(PlatformRole.ENTREPRENEUR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  submit(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DealResponse> {
+    return this.dealsService.submit(id, user);
+  }
+
+  @Post(":id/reject")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  reject(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DealResponse> {
+    return this.dealsService.reject(id, user);
+  }
+
+  @Post(":id/resume")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  resume(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DealResponse> {
+    return this.dealsService.resume(id, user);
+  }
+
+  @Delete(":id")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  remove(@Param("id") id: string): Promise<void> {
+    return this.dealsService.remove(id);
   }
 
   @Post(":id/invest")
