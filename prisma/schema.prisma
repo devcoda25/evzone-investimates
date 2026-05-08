@@ -1,0 +1,932 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantType {
+  PLATFORM
+  ORGANIZATION
+  INVESTOR_GROUP
+  ENTREPRENEUR_COMPANY
+  ASSESSOR_FIRM
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+  ADMIN
+  COMPLIANCE_OFFICER
+  INVESTOR
+  ENTREPRENEUR
+  ASSESSOR
+  SUPPORT_AGENT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  REMOVED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  BLOCKED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum InvestorType {
+  INDIVIDUAL
+  INSTITUTIONAL
+  IMPACT_FUND
+  CORPORATE
+}
+
+enum RiskTolerance {
+  CONSERVATIVE
+  MODERATE
+  AGGRESSIVE
+}
+
+enum EntrepreneurStage {
+  IDEA
+  MVP
+  EARLY_REVENUE
+  GROWTH
+  SCALE
+}
+
+enum AssessorType {
+  INDIVIDUAL_CONSULTANT
+  FIRM
+  NGO
+  GOVERNMENT_BODY
+  ACADEMIC
+}
+
+enum AssessorAvailability {
+  AVAILABLE
+  BUSY
+  ON_LEAVE
+}
+
+enum GreenSector {
+  SOLAR
+  WIND
+  HYDRO
+  BIOMASS
+  EV_CHARGING
+  GREEN_HYDROGEN
+  ENERGY_STORAGE
+  OTHER
+}
+
+enum ProjectStage {
+  CONCEPT
+  FEASIBILITY
+  CONSTRUCTION
+  OPERATIONAL
+  EXPANSION
+}
+
+enum ProjectStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  DUE_DILIGENCE
+  APPROVED
+  REJECTED
+  LISTED
+  FUNDING
+  FUNDED
+  ACTIVE
+  COMPLETED
+  SUSPENDED
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum MediaStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  VALIDATING
+  READY
+  REJECTED
+  DELETED
+}
+
+enum MediaPurpose {
+  PROJECT_GALLERY
+  PROJECT_COVER
+  DUE_DILIGENCE_EVIDENCE
+  IMPACT_EVIDENCE
+  PROFILE_AVATAR
+}
+
+enum DocumentPurpose {
+  KYC
+  KYB
+  PITCH_DECK
+  DUE_DILIGENCE_REPORT
+  DEAL_DOCUMENT
+  IMPACT_REPORT
+  GENERAL
+}
+
+enum DueDiligenceStatus {
+  NOT_STARTED
+  ASSIGNED
+  IN_PROGRESS
+  NEEDS_INFORMATION
+  REPORT_DRAFTED
+  QUALITY_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum DueDiligenceCategory {
+  FINANCIAL
+  TECHNICAL
+  LEGAL
+  ESG
+  MARKET
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+enum RiskRating {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum DealStatus {
+  DRAFT
+  COMPLIANCE_REVIEW
+  APPROVED
+  LIVE
+  PAUSED
+  CLOSED_SUCCESSFUL
+  CLOSED_FAILED
+  CANCELLED
+}
+
+enum InvestmentStatus {
+  PENDING_COMPLIANCE
+  PENDING_PAYMENT
+  COMMITTED
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+  REJECTED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  INVESTMENT
+  RETURN
+  FEE
+  REFUND
+  LEDGER_POSTING
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  FLAGGED
+  ESCROW
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CARD
+  MOBILE_MONEY
+  CRYPTO
+}
+
+enum LedgerOwnerType {
+  TENANT
+  USER
+  PROJECT
+  DEAL
+  PLATFORM
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum ComplianceAlertType {
+  KYC_ISSUE
+  AML_FLAG
+  DOCUMENT_EXPIRY
+  REGULATORY_CHANGE
+  MANUAL_REVIEW
+}
+
+enum ComplianceAlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplianceAlertStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ComplianceCaseStatus {
+  OPEN
+  MANUAL_REVIEW
+  APPROVED
+  REJECTED
+  CLOSED
+}
+
+enum DisputeType {
+  PAYMENT
+  PROJECT_DELIVERY
+  FRAUD
+  COMMUNICATION
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  MEDIATION
+  RESOLVED
+  ESCALATED
+  CLOSED
+}
+
+enum NotificationType {
+  PROJECT_UPDATE
+  INVESTMENT_UPDATE
+  DUE_DILIGENCE
+  COMPLIANCE
+  MESSAGE
+  SYSTEM
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+model Tenant {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  type        TenantType   @default(ORGANIZATION)
+  countryCode String?
+  status      TenantStatus @default(ACTIVE)
+
+  users       UserTenantMembership[]
+  projects    Project[]
+  deals       Deal[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model User {
+  id              String     @id @default(uuid())
+  email           String     @unique
+  phone           String?
+  passwordHash    String?
+  firstName       String
+  lastName        String
+  avatar          String?
+  status          UserStatus @default(PENDING_VERIFICATION)
+  kycStatus       KycStatus  @default(NOT_STARTED)
+  mfaEnabled      Boolean    @default(false)
+  countryCode     String?
+  city            String?
+  bio             String?
+  riskLevel       RiskRating?
+  preferences     Json?
+  lastLoginAt     DateTime?
+  loginAttempts   Int        @default(0)
+  lockoutUntil    DateTime?
+
+  memberships         UserTenantMembership[]
+  investorProfile     InvestorProfile?
+  entrepreneurProfile EntrepreneurProfile?
+  assessorProfile     AssessorProfile?
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  ownedProjects       Project[]          @relation("ProjectOwner")
+  investments         Investment[]       @relation("InvestorInvestments")
+  notifications       Notification[]
+  sentMessages        Message[]          @relation("MessageSender")
+  receivedMessages    Message[]          @relation("MessageRecipient")
+  auditLogs           AuditLog[]
+  disputes            Dispute[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  @@index([status])
+  @@index([kycStatus])
+}
+
+model UserTenantMembership {
+  id        String           @id @default(uuid())
+  userId    String
+  tenantId  String
+  role      PlatformRole
+  status    MembershipStatus @default(ACTIVE)
+
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, tenantId, role])
+  @@index([tenantId, role])
+  @@index([userId, status])
+}
+
+model InvestorProfile {
+  id                  String        @id @default(uuid())
+  userId              String        @unique
+  investorType        InvestorType  @default(INDIVIDUAL)
+  riskTolerance       RiskTolerance @default(MODERATE)
+  annualIncome        Decimal?      @db.Decimal(18, 2)
+  netWorth            Decimal?      @db.Decimal(18, 2)
+  accreditationStatus Boolean       @default(false)
+  investmentGoals     String[]      @default([])
+  preferredSectors    String[]      @default([])
+  totalInvested       Decimal       @default(0) @db.Decimal(18, 2)
+  totalReturns        Decimal       @default(0) @db.Decimal(18, 2)
+  activeInvestments   Int           @default(0)
+  completedInvestments Int          @default(0)
+  esgPreferences      Json?
+
+  user                User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EntrepreneurProfile {
+  id              String            @id @default(uuid())
+  userId          String            @unique
+  companyName     String
+  companyRegistration String?
+  companyWebsite  String?
+  industry        String
+  foundedYear     Int?
+  teamSize        Int?
+  stage           EntrepreneurStage @default(IDEA)
+  pitchDeck       String?
+  previousFunding Decimal           @default(0) @db.Decimal(18, 2)
+  totalRaised     Decimal           @default(0) @db.Decimal(18, 2)
+  activeCampaigns Int               @default(0)
+  completedCampaigns Int            @default(0)
+
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AssessorProfile {
+  id                  String               @id @default(uuid())
+  userId              String               @unique
+  organizationName    String
+  organizationType    AssessorType         @default(FIRM)
+  specialties         String[]      @default([])
+  credentials         Json?
+  yearsOfExperience   Int                  @default(0)
+  completedEngagements Int                 @default(0)
+  rating              Decimal              @default(0) @db.Decimal(3, 2)
+  availabilityStatus  AssessorAvailability @default(AVAILABLE)
+  hourlyRate          Decimal?             @db.Decimal(18, 2)
+  serviceRegions      String[]      @default([])
+  bio                 String?
+  licenseExpiry       DateTime?
+  insuranceValid      Boolean              @default(false)
+  tier                String               @default("Bronze")
+  avgTurnaround       Int?
+
+  user                User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedCases       DueDiligenceCase[]   @relation("AssignedAssessor")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  tokenHash    String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedBy   String?
+  ipAddress    String?
+  userAgent    String?
+
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model Project {
+  id              String        @id @default(uuid())
+  tenantId        String
+  ownerUserId     String
+  title           String
+  slug            String
+  subtitle        String?
+  summary         String
+  description     String?
+  longDescription String?
+  coverImage      String?
+  videoUrl        String?
+  impactVideo     String?
+  story           Json?
+  countryCode     String
+  country         String
+  city            String?
+  region          String?
+  coordinates     String?
+  locationDescription String?
+  sector          GreenSector
+  stage           ProjectStage
+  status          ProjectStatus @default(DRAFT)
+  fundingTarget   Decimal       @db.Decimal(18, 2)
+  fundingRaised   Decimal       @default(0) @db.Decimal(18, 2)
+  minInvestment   Decimal       @default(100) @db.Decimal(18, 2)
+  maxInvestment   Decimal?      @db.Decimal(18, 2)
+  currency        String        @default("USD")
+  equityOffered   Decimal?      @db.Decimal(5, 2)
+  valuation       Decimal?      @db.Decimal(18, 2)
+  structure       String?
+  returnTarget    Decimal?      @db.Decimal(5, 2)
+  expectedImpact  Json?
+  impactMetrics   Json?
+  sdgs            Int[]         @default([])
+  risks           Json?
+  faqs            Json?
+  teamMembers     Json?
+  riskRating      RiskRating?
+  listedAt        DateTime?
+  campaignStartDate DateTime?
+  campaignEndDate DateTime?
+  projectStartDate DateTime?
+  projectEndDate DateTime?
+  viewCount       Int           @default(0)
+  featured        Boolean       @default(false)
+  featuredOrder   Int?
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  owner           User   @relation("ProjectOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  milestones      Milestone[]
+  gallery         MediaAsset[]
+  documents       Document[]
+  dueDiligence    DueDiligenceCase?
+  deals           Deal[]
+  investments     Investment[]
+  transactions    Transaction[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@index([countryCode, sector])
+  @@index([ownerUserId])
+}
+
+model Milestone {
+  id          String          @id @default(uuid())
+  projectId   String
+  title       String
+  description String?
+  amount      Decimal?        @db.Decimal(18, 2)
+  dueDate     DateTime?
+  completedAt DateTime?
+  verifiedBy  String?
+  status      MilestoneStatus @default(PENDING)
+  order       Int             @default(0)
+  deliverables Json?
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, status])
+}
+
+model MediaAsset {
+  id              String       @id @default(uuid())
+  tenantId        String
+  projectId       String?
+  ownerUserId     String
+  bucket          String
+  objectKey       String
+  publicUrl       String?
+  contentType     String
+  sizeBytes       Int?
+  checksum        String?
+  status          MediaStatus  @default(PENDING_UPLOAD)
+  purpose         MediaPurpose
+  width           Int?
+  height          Int?
+  altText         String?
+  sortOrder       Int          @default(0)
+
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, projectId])
+  @@index([status])
+  @@unique([bucket, objectKey])
+}
+
+model Document {
+  id              String          @id @default(uuid())
+  tenantId        String
+  ownerUserId     String
+  projectId       String?
+  mediaAssetId    String?
+  originalName    String
+  contentType     String
+  sizeBytes       Int?
+  bucket          String
+  objectKey       String
+  purpose         DocumentPurpose @default(GENERAL)
+  status          MediaStatus     @default(PENDING_UPLOAD)
+  deletedAt       DateTime?
+
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, ownerUserId])
+  @@index([projectId])
+  @@unique([bucket, objectKey])
+}
+
+model DueDiligenceCase {
+  id              String             @id @default(uuid())
+  tenantId        String
+  projectId       String             @unique
+  assignedAssessorId String?
+  status          DueDiligenceStatus @default(NOT_STARTED)
+  riskScore       Int?
+  riskRating      RiskRating?
+  summary         String?
+  finalReportDocumentId String?
+  assignedAt      DateTime?
+  startedAt       DateTime?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  dueAt           DateTime?
+  notes           String?
+  assessments     Json?
+
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedAssessor AssessorProfile? @relation("AssignedAssessor", fields: [assignedAssessorId], references: [userId], onDelete: SetNull)
+  tasks           DueDiligenceTask[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([assignedAssessorId])
+}
+
+model DueDiligenceTask {
+  id          String               @id @default(uuid())
+  caseId      String
+  category    DueDiligenceCategory
+  title       String
+  status      TaskStatus           @default(OPEN)
+  assignedTo  String?
+  dueAt       DateTime?
+  notes       String?
+
+  case        DueDiligenceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([caseId, status])
+}
+
+model Deal {
+  id              String     @id @default(uuid())
+  tenantId        String
+  projectId       String
+  title           String
+  status          DealStatus @default(DRAFT)
+  currency        String     @default("USD")
+  minInvestment   Decimal    @db.Decimal(18, 2)
+  targetAmount    Decimal    @db.Decimal(18, 2)
+  maxAmount       Decimal?   @db.Decimal(18, 2)
+  opensAt         DateTime?
+  closesAt        DateTime?
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  investments     Investment[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([projectId])
+}
+
+model Investment {
+  id              String           @id @default(uuid())
+  tenantId        String
+  dealId          String?
+  projectId       String
+  investorUserId  String
+  amount          Decimal          @db.Decimal(18, 2)
+  currency        String
+  status          InvestmentStatus @default(PENDING_COMPLIANCE)
+  idempotencyKey  String
+  paymentMethod   PaymentMethod?
+  confirmedAt     DateTime?
+
+  deal            Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  investor        User     @relation("InvestorInvestments", fields: [investorUserId], references: [id], onDelete: Restrict)
+  transactions    Transaction[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([investorUserId, idempotencyKey])
+  @@index([tenantId, projectId])
+  @@index([investorUserId, status])
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  tenantId        String
+  userId          String
+  investmentId    String?
+  projectId       String?
+  type            TransactionType
+  amount          Decimal           @db.Decimal(18, 2)
+  currency        String            @default("USD")
+  status          TransactionStatus @default(PENDING)
+  paymentMethod   PaymentMethod?
+  paymentProvider String?
+  providerTransactionId String?
+  riskScore       Int?
+  jurisdiction    String?
+  metadata        Json?
+  processedAt     DateTime?
+
+  investment      Investment? @relation(fields: [investmentId], references: [id], onDelete: SetNull)
+  project         Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([userId])
+  @@index([projectId])
+}
+
+model LedgerAccount {
+  id          String          @id @default(uuid())
+  tenantId    String
+  ownerType   LedgerOwnerType
+  ownerId     String
+  currency    String
+  name        String
+
+  entries     LedgerEntry[]
+
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, ownerType, ownerId, currency, name])
+}
+
+model LedgerEntry {
+  id              String          @id @default(uuid())
+  tenantId        String
+  accountId       String
+  transactionId   String
+  direction       LedgerDirection
+  amount          Decimal         @db.Decimal(18, 2)
+  currency        String
+  memo            String?
+
+  account         LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  createdAt       DateTime @default(now())
+
+  @@index([tenantId, transactionId])
+  @@index([accountId])
+}
+
+model ComplianceAlert {
+  id          String                    @id @default(uuid())
+  tenantId    String
+  type        ComplianceAlertType
+  severity    ComplianceAlertSeverity
+  status      ComplianceAlertStatus     @default(OPEN)
+  entityType  String
+  entityId    String
+  title       String
+  description String
+  assignedTo  String?
+  resolutionNotes String?
+  resolvedAt  DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([severity])
+}
+
+model ComplianceCase {
+  id          String               @id @default(uuid())
+  tenantId    String
+  userId      String?
+  organizationId String?
+  dealId      String?
+  status      ComplianceCaseStatus @default(OPEN)
+  riskRating  RiskRating?
+  reason      String?
+  metadata    Json?
+  decidedAt   DateTime?
+  decidedBy   String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([userId])
+}
+
+model Dispute {
+  id          String        @id @default(uuid())
+  tenantId    String
+  type        DisputeType
+  status      DisputeStatus @default(OPEN)
+  title       String
+  description String
+  initiatorId String
+  entityType  String?
+  entityId    String?
+  evidence    Json?
+  resolution  String?
+  resolvedAt  DateTime?
+
+  initiator   User @relation(fields: [initiatorId], references: [id], onDelete: Restrict)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([initiatorId])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  userId      String?
+  action      String
+  entityType  String
+  entityId    String
+  oldValues   Json?
+  newValues   Json?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+
+  user        User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, action])
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  tenantId    String?
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+  readAt      DateTime?
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  recipientId String
+  subject     String?
+  body        String
+  attachments Json?
+  readAt      DateTime?
+
+  sender      User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([senderId])
+  @@index([recipientId, readAt])
+}
+
+model OutboxEvent {
+  id              String       @id @default(uuid())
+  tenantId        String?
+  topic           String
+  eventType       String
+  aggregateType   String
+  aggregateId     String
+  eventKey        String       @unique
+  payload         Json
+  status          OutboxStatus @default(PENDING)
+  attempts        Int          @default(0)
+  lastError       String?
+  publishedAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([aggregateType, aggregateId])
+}
