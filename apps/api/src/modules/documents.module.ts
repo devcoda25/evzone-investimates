@@ -29,6 +29,7 @@ import { AuthenticatedUser, CurrentUser } from "@evzone/common";
 import { PrismaService } from "@evzone/database";
 import { PermissionsService } from "@evzone/permissions";
 import { SignedUploadIntent, StorageService } from "@evzone/storage";
+import { Query } from "@nestjs/common";
 
 interface DocumentResponse {
   id: string;
@@ -142,9 +143,19 @@ class DocumentsService {
     return this.toResponse(document);
   }
 
-  async findByUser(user: AuthenticatedUser): Promise<DocumentResponse[]> {
+  async findByUser(
+    user: AuthenticatedUser,
+    purpose?: DocumentPurpose,
+    projectId?: string,
+  ): Promise<DocumentResponse[]> {
+    const where: { ownerUserId: string; deletedAt: null; purpose?: DocumentPurpose; projectId?: string } = {
+      ownerUserId: user.id,
+      deletedAt: null,
+    };
+    if (purpose) where.purpose = purpose;
+    if (projectId) where.projectId = projectId;
     const documents = await this.prisma.document.findMany({
-      where: { ownerUserId: user.id, deletedAt: null },
+      where,
       orderBy: { createdAt: "desc" },
     });
     return documents.map((document) => this.toResponse(document));
@@ -227,6 +238,16 @@ function cryptoRandomId(): string {
   return randomUUID();
 }
 
+class DocumentFilterDto {
+  @IsOptional()
+  @IsEnum(DocumentPurpose)
+  purpose?: DocumentPurpose;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string;
+}
+
 @ApiTags("Documents")
 @ApiBearerAuth()
 @Controller("documents")
@@ -235,9 +256,10 @@ class DocumentsController {
 
   @Get()
   findByUser(
+    @Query() filter: DocumentFilterDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DocumentResponse[]> {
-    return this.documentsService.findByUser(user);
+    return this.documentsService.findByUser(user, filter.purpose, filter.projectId);
   }
 
   @Get("project/:projectId")

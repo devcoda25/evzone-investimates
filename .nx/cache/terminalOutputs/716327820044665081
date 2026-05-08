@@ -1,0 +1,77 @@
+> tsc -p apps/api/tsconfig.app.json
+
+apps/api/src/modules/documents.module.ts(247,1): error TS1068: Unexpected token. A constructor, method, accessor, or property was expected.
+apps/api/src/modules/documents.module.ts(257,9): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(259,13): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(259,14): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(259,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(260,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(260,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(260,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(261,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(261,31): error TS1011: An element access expression should take an argument.
+apps/api/src/modules/documents.module.ts(262,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(262,84): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(265,29): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(267,24): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(267,25): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(267,34): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(268,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(268,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(268,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(269,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(269,31): error TS1011: An element access expression should take an argument.
+apps/api/src/modules/documents.module.ts(270,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(270,64): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(273,26): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(275,12): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(275,13): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(275,16): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(276,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(276,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(276,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(277,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(278,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(278,63): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(286,5): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(288,20): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(288,21): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(288,25): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(289,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(289,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(289,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(290,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(291,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(291,52): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(294,14): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(296,17): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(296,18): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(296,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(297,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(297,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(297,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(298,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(299,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(299,52): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(302,27): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(304,17): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(304,18): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(304,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(305,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(305,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(305,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(306,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(307,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(307,57): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(311,35): error TS1146: Declaration expected.
+apps/api/src/modules/documents.module.ts(313,17): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(313,18): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(313,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(314,19): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(314,20): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(314,24): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(315,4): error TS1005: ';' expected.
+apps/api/src/modules/documents.module.ts(315,18): error TS1109: Expression expected.
+apps/api/src/modules/documents.module.ts(316,12): error TS1005: ':' expected.
+apps/api/src/modules/documents.module.ts(316,54): error TS1005: ',' expected.
+apps/api/src/modules/documents.module.ts(318,1): error TS1128: Declaration or statement expected.

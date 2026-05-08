@@ -379,6 +379,13 @@ model User {
   receivedMessages    Message[]          @relation("MessageRecipient")
   auditLogs           AuditLog[]
   disputes            Dispute[]
+  watchlistItems      WatchlistItem[]
+  activityEvents      ActivityEvent[]
+  paymentSchedules    PaymentSchedule[]
+  aiChatSessions      AiChatSession[]
+  governanceVoteCasts GovernanceVoteCast[]
+  kycApplications     KycApplication[]
+  kybApplications     KybApplication[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -713,6 +720,7 @@ model Deal {
   tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   investments     Investment[]
+  watchlistItems  WatchlistItem[]
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -807,6 +815,252 @@ model LedgerEntry {
 
   @@index([tenantId, transactionId])
   @@index([accountId])
+}
+
+enum PaymentProvider {
+  FLUTTERWAVE
+  PAYTOTA
+}
+
+enum PaymentDirection {
+  COLLECTION
+  PAYOUT
+  REFUND
+}
+
+enum PaymentPurpose {
+  INVESTMENT_FUNDING
+  INVESTOR_TOPUP
+  PROJECT_REPAYMENT
+  INVESTOR_DISTRIBUTION
+  ASSESSOR_FEE
+  PLATFORM_FEE
+  REFUND
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum WebhookProcessingStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum PayoutDestinationType {
+  BANK_ACCOUNT
+  MOBILE_MONEY
+  WALLET
+}
+
+enum KycProvider {
+  SMILE_IDENTITY
+  ONFIDO
+  GENERIC
+}
+
+enum KycApplicationStatus {
+  PENDING
+  SUBMITTED
+  PROCESSING
+  VERIFIED
+  REJECTED
+}
+
+enum IdDocumentType {
+  PASSPORT
+  NATIONAL_ID
+  DRIVERS_LICENSE
+  RESIDENCE_PERMIT
+  BUSINESS_REGISTRATION
+  TAX_DOCUMENT
+}
+
+model PaymentIntent {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  investmentId          String?
+  dealId                String?
+  userId                String?
+
+  provider              PaymentProvider
+  direction             PaymentDirection
+  purpose               PaymentPurpose
+
+  internalReference     String   @unique
+  providerReference     String?
+  providerTransactionId String?
+
+  amount                Decimal  @db.Decimal(18, 2)
+  currency              String
+
+  status                PaymentStatus @default(PENDING)
+  checkoutUrl           String?
+  expiresAt             DateTime?
+
+  metadata              Json?
+  rawProviderResponse   Json?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  transactions          PaymentTransaction[]
+
+  @@index([tenantId, status])
+  @@index([provider, providerReference])
+  @@index([investmentId])
+}
+
+model PaymentTransaction {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  paymentIntentId       String
+
+  provider              PaymentProvider
+  providerTransactionId String?
+  providerReference     String?
+
+  amount                Decimal  @db.Decimal(18, 2)
+  currency              String
+  status                PaymentStatus
+
+  providerStatus        String?
+  providerFeeAmount     Decimal? @db.Decimal(18, 2)
+  netAmount             Decimal? @db.Decimal(18, 2)
+
+  verifiedAt            DateTime?
+  settledAt             DateTime?
+
+  rawProviderResponse   Json?
+
+  paymentIntent         PaymentIntent @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([provider, providerTransactionId])
+}
+
+model PaymentWebhookEvent {
+  id                String   @id @default(uuid())
+  provider          PaymentProvider
+  providerEventId   String?
+  eventType         String
+  signature         String?
+  rawBody           String
+  payload           Json
+
+  processingStatus  WebhookProcessingStatus @default(PENDING)
+  processedAt       DateTime?
+  errorMessage      String?
+
+  createdAt         DateTime @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([provider, eventType])
+  @@index([processingStatus])
+}
+
+model Payout {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  userId                String?
+  organizationId        String?
+
+  provider              PaymentProvider
+  internalReference     String   @unique
+  providerPayoutId      String?
+  providerReference     String?
+
+  amount                Decimal  @db.Decimal(18, 2)
+  currency              String
+  destinationType       PayoutDestinationType
+  destinationMasked     String
+
+  status                PaymentStatus @default(PENDING)
+
+  rawProviderResponse   Json?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([provider, providerPayoutId])
+}
+
+model KycApplication {
+  id                String                @id @default(uuid())
+  tenantId          String
+  userId            String
+  provider          KycProvider
+  providerReference String?
+  status            KycApplicationStatus  @default(PENDING)
+
+  idType            IdDocumentType?
+  idNumber          String?
+  idExpiryDate      DateTime?
+  nationality       String?
+  dateOfBirth       DateTime?
+
+  submittedData     Json?
+  providerResult    Json?
+  verificationScore Decimal?              @db.Decimal(5, 2)
+
+  verifiedAt        DateTime?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([userId, status])
+  @@index([provider, providerReference])
+}
+
+model KybApplication {
+  id                    String                @id @default(uuid())
+  tenantId              String
+  userId                String?
+  organizationName      String
+  registrationNumber    String?
+  incorporationDate     DateTime?
+  jurisdiction          String?
+
+  provider              KycProvider           @default(GENERIC)
+  providerReference     String?
+  status                KycApplicationStatus  @default(PENDING)
+
+  directors             Json?
+  beneficialOwners      Json?
+  submittedDocuments    Json?
+  providerResult        Json?
+  verificationScore     Decimal?              @db.Decimal(5, 2)
+
+  verifiedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  user                  User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([userId, status])
+  @@index([provider, providerReference])
 }
 
 model ComplianceAlert {
@@ -949,4 +1203,114 @@ model OutboxEvent {
 
   @@index([status, createdAt])
   @@index([aggregateType, aggregateId])
+}
+model WatchlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  dealId    String
+  tenantId  String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dealId])
+  @@index([userId])
+  @@index([tenantId])
+}
+
+model ActivityEvent {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  type      String   // investment | document | alert | payment | message | system
+  title     String
+  detail    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([tenantId])
+}
+
+model PaymentSchedule {
+  id            String   @id @default(uuid())
+  tenantId      String
+  userId        String
+  investmentId  String?
+  dealId        String?
+  projectId     String?
+  amount        Decimal  @db.Decimal(18, 2)
+  currency      String   @default("USD")
+  dueDate       DateTime
+  status        String   @default("scheduled") // scheduled | pending | paid | overdue | cancelled
+  type          String   // distribution | capital_call | dividend | interest | revenue_share
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([dueDate])
+  @@index([tenantId])
+}
+
+model GovernanceVote {
+  id          String   @id @default(uuid())
+  tenantId    String
+  projectId   String
+  title       String
+  description String
+  status      String   @default("open") // open | closed
+  deadline    DateTime
+  quorum      Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  casts       GovernanceVoteCast[]
+
+  @@index([projectId, status])
+  @@index([tenantId, status])
+}
+
+model GovernanceVoteCast {
+  id        String         @id @default(uuid())
+  voteId    String
+  userId    String
+  choice    String         // for | against | abstain
+  createdAt DateTime       @default(now())
+
+  vote      GovernanceVote @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([voteId, userId])
+  @@index([voteId])
+}
+
+model AiChatSession {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiChatMessage[]
+
+  @@index([userId])
+}
+
+model AiChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  role      String   // user | ai
+  text      String
+  createdAt DateTime @default(now())
+
+  session   AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
 }

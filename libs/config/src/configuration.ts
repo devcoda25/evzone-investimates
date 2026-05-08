@@ -79,10 +79,17 @@ export const storageConfig = registerAs("storage", () => ({
   ),
 }));
 
+export const kycConfig = registerAs("kyc", () => ({
+  smileIdentityApiKey: optionalString(process.env.SMILE_IDENTITY_API_KEY, ""),
+  smileIdentityPartnerId: optionalString(process.env.SMILE_IDENTITY_PARTNER_ID, ""),
+  smileIdentityWebhookSecret: optionalString(process.env.SMILE_IDENTITY_WEBHOOK_SECRET, ""),
+}));
+
 export const configuration = [
   appConfig,
   jwtConfig,
   kafkaConfig,
   redisConfig,
   storageConfig,
+  kycConfig,
 ];

@@ -21,6 +21,11 @@ import { NotificationsModule } from "./modules/notifications.module";
 import { ProjectsModule } from "./modules/projects.module";
 import { UsersModule } from "./modules/users.module";
 import { DealsModule } from "./modules/deals.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
+import { WatchlistModule } from "./modules/watchlist.module";
+import { ActivityModule } from "./modules/activity.module";
+import { AiAdvisorModule } from "./modules/ai-advisor.module";
+import { VotesModule } from "./modules/votes.module";
 
 @Module({
   imports: [
@@ -57,6 +62,11 @@ import { DealsModule } from "./modules/deals.module";
     NotificationsModule,
     MessagingModule,
     DealsModule,
+    PaymentsModule,
+    WatchlistModule,
+    ActivityModule,
+    AiAdvisorModule,
+    VotesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -1,0 +1,2 @@
+> tsc -p apps/scheduler/tsconfig.app.json
+

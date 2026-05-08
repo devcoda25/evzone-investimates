@@ -1,0 +1,23 @@
+> tsc -p apps/api/tsconfig.app.json
+
+apps/api/src/modules/payments/flutterwave.adapter.ts(4,29): error TS2307: Cannot find module '@nestjs/axios' or its corresponding type declarations.
+apps/api/src/modules/payments/flutterwave.adapter.ts(58,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(65,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(86,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(96,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(125,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(131,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(149,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/flutterwave.adapter.ts(157,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/payments.controller.ts(19,36): error TS2305: Module '"@evzone/common"' has no exported member 'JwtUser'.
+apps/api/src/modules/payments/payments.controller.ts(19,45): error TS2305: Module '"@evzone/common"' has no exported member 'Permission'.
+apps/api/src/modules/payments/payments.module.ts(2,28): error TS2307: Cannot find module '@nestjs/axios' or its corresponding type declarations.
+apps/api/src/modules/payments/paytota.adapter.ts(4,29): error TS2307: Cannot find module '@nestjs/axios' or its corresponding type declarations.
+apps/api/src/modules/payments/paytota.adapter.ts(56,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(63,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(84,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(94,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(125,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(131,22): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(149,20): error TS18046: 'res' is of type 'unknown'.
+apps/api/src/modules/payments/paytota.adapter.ts(157,22): error TS18046: 'res' is of type 'unknown'.

@@ -1,0 +1,8 @@
+> tsc -p apps/api/tsconfig.app.json
+
+apps/api/src/modules/admin.module.ts(761,20): error TS2353: Object literal may only specify known properties, and 'user' does not exist in type 'TransactionInclude<DefaultArgs>'.
+apps/api/src/modules/admin.module.ts(771,20): error TS2353: Object literal may only specify known properties, and 'user' does not exist in type 'TransactionInclude<DefaultArgs>'.
+apps/api/src/modules/admin.module.ts(795,17): error TS2339: Property 'user' does not exist on type '{ type: TransactionType; status: TransactionStatus; userId: string; tenantId: string; id: string; createdAt: Date; currency: string; updatedAt: Date; ... 9 more ...; processedAt: Date | null; }'.
+apps/api/src/modules/admin.module.ts(804,17): error TS2339: Property 'user' does not exist on type '{ type: TransactionType; status: TransactionStatus; userId: string; tenantId: string; id: string; createdAt: Date; currency: string; updatedAt: Date; ... 9 more ...; processedAt: Date | null; }'.
+apps/api/src/modules/payments/kyc-kyb.service.ts(329,44): error TS2353: Object literal may only specify known properties, and 'tenantId' does not exist in type 'UserSelect<DefaultArgs>'.
+apps/api/src/modules/payments/kyc-kyb.service.ts(332,57): error TS2339: Property 'tenantId' does not exist on type '{ status: UserStatus; riskLevel: RiskRating | null; id: string; createdAt: Date; countryCode: string | null; city: string | null; updatedAt: Date; ... 13 more ...; lockoutUntil: Date | null; }'.
