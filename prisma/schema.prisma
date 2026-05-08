@@ -375,6 +375,7 @@ model User {
   ownedProjects       Project[]          @relation("ProjectOwner")
   investments         Investment[]       @relation("InvestorInvestments")
   notifications       Notification[]
+  pushSubscriptions   PushSubscription[]
   sentMessages        Message[]          @relation("MessageSender")
   receivedMessages    Message[]          @relation("MessageRecipient")
   auditLogs           AuditLog[]
@@ -1179,12 +1180,29 @@ model Notification {
   message     String
   data        Json?
   readAt      DateTime?
+  channels    String[]         @default([])
 
   user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt   DateTime @default(now())
 
   @@index([userId, readAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String
+  endpoint  String
+  p256dh    String
+  auth      String
+  userAgent String?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@unique([userId, endpoint])
 }
 
 model Message {

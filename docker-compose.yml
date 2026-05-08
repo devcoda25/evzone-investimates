@@ -155,6 +155,35 @@ services:
       - evzone-network
     command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-events/src/main.ts"]
 
+  worker-notifications:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: evzone-worker-notifications
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      DIRECT_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-evzone-assets}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
+      STORAGE_FORCE_PATH_STYLE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - evzone-network
+    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-notifications/src/main.ts"]
+
   worker-media:
     build:
       context: .
