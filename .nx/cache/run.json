@@ -1,18 +1,18 @@
 {
   "run": {
-    "command": "nx run worker-webhooks:build",
-    "startTime": "2026-05-08T15:56:56.117Z",
-    "endTime": "2026-05-08T15:57:06.923Z",
+    "command": "nx run worker-notifications:build",
+    "startTime": "2026-05-08T16:29:57.068Z",
+    "endTime": "2026-05-08T16:30:05.146Z",
     "inner": false
   },
   "tasks": [
     {
-      "taskId": "worker-webhooks:build",
+      "taskId": "worker-notifications:build",
       "target": "build",
-      "projectName": "worker-webhooks",
-      "hash": "4487992968021081751",
-      "startTime": "2026-05-08T15:56:56.160Z",
-      "endTime": "2026-05-08T15:57:06.922Z",
+      "projectName": "worker-notifications",
+      "hash": "4483196893112430118",
+      "startTime": "2026-05-08T16:29:57.097Z",
+      "endTime": "2026-05-08T16:30:05.120Z",
       "params": "",
       "cacheStatus": "cache-miss",
       "status": 0

@@ -1189,3 +1189,150 @@
 [NX Daemon Server] - 2026-05-08T15:23:51.931Z - Done responding to the client handleGetFlakyTasks
 [NX Daemon Server] - 2026-05-08T15:23:51.931Z - Handled GET_FLAKY_TASKS. Handling time: 1. Response time: 0.
 [NX Daemon Server] - 2026-05-08T15:23:51.942Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:14:35.051Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX Daemon Server] - 2026-05-08T16:14:35.057Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX Daemon Server] - 2026-05-08T16:14:35.065Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:14:35.069Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:14:35.069Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:14:35.073Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T16:14:35.558Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\js' 482.76340000000005ms
+[NX Daemon Server] - 2026-05-08T16:14:35.568Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\project-json\build-nodes\project-json' 470.0971ms
+[NX Daemon Server] - 2026-05-08T16:14:35.576Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T16:14:35.576Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T16:14:35.576Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T16:14:35.585Z - Time taken for 'loadNxPlugins' 501.19800000000004ms
+[NX Daemon Server] - 2026-05-08T16:14:35.625Z - Time taken for 'build-project-configs' 23.103700000000003ms
+[NX Daemon Server] - 2026-05-08T16:14:35.655Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T16:14:35.657Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T16:14:35.658Z - Time taken for 'total for creating and serializing project graph' 584.0208ms
+[NX Daemon Server] - 2026-05-08T16:14:35.659Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T16:14:35.659Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 584. Response time: 3.
+[NX Daemon Server] - 2026-05-08T16:14:35.725Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:14:35.727Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:14:35.727Z - Handled HASH_TASKS. Handling time: 10. Response time: 2.
+[NX Daemon Server] - 2026-05-08T16:14:35.749Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:14:35.749Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:14:35.749Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 4. Response time: 0.
+[NX Daemon Server] - 2026-05-08T16:14:42.490Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.542Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.606Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.741Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.809Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.896Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:42.962Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:14:43.065Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:14:43.065Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:14:43.066Z - Handled RECORD_OUTPUTS_HASH. Handling time: 10. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:14:43.249Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:14:43.250Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:14:43.250Z - Handled RECORD_TASK_RUNS. Handling time: 2. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:14:43.251Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:14:43.251Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:14:43.251Z - Handled GET_FLAKY_TASKS. Handling time: 0. Response time: 0.
+[NX Daemon Server] - 2026-05-08T16:14:43.259Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:16:44.576Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:16:44.576Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:16:44.577Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:16:44.581Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T16:16:44.581Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T16:16:44.583Z - Time taken for 'total for creating and serializing project graph' 0.6328999999968801ms
+[NX Daemon Server] - 2026-05-08T16:16:44.584Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T16:16:44.584Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 1. Response time: 3.
+[NX Daemon Server] - 2026-05-08T16:16:44.686Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:16:44.687Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:16:44.687Z - Handled HASH_TASKS. Handling time: 6. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:16:44.707Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:16:44.708Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:16:44.708Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:16:50.427Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:16:50.486Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:16:50.553Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:16:50.619Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:16:50.668Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:16:50.669Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:16:50.669Z - Handled RECORD_OUTPUTS_HASH. Handling time: 6. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:16:50.748Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:16:50.748Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:16:50.749Z - Handled RECORD_TASK_RUNS. Handling time: 2. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:16:50.750Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:16:50.751Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:16:50.751Z - Handled GET_FLAKY_TASKS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:16:50.760Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:23:52.160Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:23:52.161Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX Daemon Server] - 2026-05-08T16:23:52.161Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)
+
+> NX runtime error err=cannot send event from fs watcher: sending into a closed channel
+
+
+> NX runtime error err=cannot send event from fs watcher: sending into a closed channel
+
+
+> NX runtime error err=cannot send event from fs watcher: sending into a closed channel
+
+[NX Daemon Server] - 2026-05-08T16:24:28.846Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX Daemon Server] - 2026-05-08T16:24:28.852Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX Daemon Server] - 2026-05-08T16:24:28.857Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:24:28.859Z - Established a connection. Number of open connections: 2
+[NX Daemon Server] - 2026-05-08T16:24:28.864Z - Closed a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:24:28.870Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T16:24:29.564Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\package-json' 672.0563999999999ms
+[NX Daemon Server] - 2026-05-08T16:24:29.575Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\project-json\build-nodes\project-json' 670.1756ms
+[NX Daemon Server] - 2026-05-08T16:24:29.616Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T16:24:29.616Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T16:24:29.616Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T16:24:29.633Z - Time taken for 'loadNxPlugins' 742.2499999999999ms
+[NX Daemon Server] - 2026-05-08T16:24:29.726Z - Time taken for 'build-project-configs' 60.08249999999998ms
+[NX Daemon Server] - 2026-05-08T16:24:29.914Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T16:24:29.918Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T16:24:29.920Z - Time taken for 'total for creating and serializing project graph' 1047.8357ms
+[NX Daemon Server] - 2026-05-08T16:24:29.922Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T16:24:29.923Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 1048. Response time: 5.
+[NX Daemon Server] - 2026-05-08T16:24:30.073Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:24:30.075Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T16:24:30.076Z - Handled HASH_TASKS. Handling time: 26. Response time: 3.
+[NX Daemon Server] - 2026-05-08T16:24:30.111Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:24:30.112Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T16:24:30.112Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 4. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:24:38.477Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.533Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.606Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.660Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.715Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.780Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:24:38.860Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:24:38.860Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T16:24:38.860Z - Handled RECORD_OUTPUTS_HASH. Handling time: 11. Response time: 0.
+[NX Daemon Server] - 2026-05-08T16:24:38.869Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:24:38.870Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T16:24:38.870Z - Handled RECORD_TASK_RUNS. Handling time: 2. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:24:38.872Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:24:38.873Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T16:24:38.873Z - Handled GET_FLAKY_TASKS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:24:38.884Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:26:48.987Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:26:49.051Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:26:49.146Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:26:53.528Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:26:53.587Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:26:53.659Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T16:27:23.782Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:27:23.783Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:27:23.784Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T16:27:23.787Z - [REQUEST]: Responding to the client with an error. Daemon outdated NX_VERSION_CHANGED
+Error: NX_VERSION_CHANGED
+    at handleMessage (D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\daemon\server\server.js:92:88)
+    at D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\daemon\server\server.js:72:15
+    at Socket.<anonymous> (D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\utils\consume-messages-from-socket.js:13:17)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+[NX Daemon Server] - 2026-05-08T16:27:23.789Z - Done responding to the client null
+[NX Daemon Server] - 2026-05-08T16:27:23.790Z - [REQUEST]: Responding to the client. Shutdown initiated
+[NX Daemon Server] - 2026-05-08T16:27:23.791Z - Done responding to the client Shutdown initiated
+[NX Daemon Server] - 2026-05-08T16:27:23.791Z - Handled FORCE_SHUTDOWN. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T16:27:23.793Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX Daemon Server] - 2026-05-08T16:27:23.793Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T16:27:23.794Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)
