@@ -28,6 +28,7 @@ import {
 } from "class-validator";
 import { randomUUID } from "crypto";
 import {
+  DocumentPurpose,
   GreenSector,
   MediaPurpose,
   MediaStatus,
@@ -326,6 +327,35 @@ class UpdateMediaDto {
 class ReorderGalleryDto {
   @IsArray()
   mediaIds!: string[];
+}
+
+class CreateProjectDocumentDto {
+  @IsString()
+  fileName!: string;
+
+  @IsString()
+  contentType!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  sizeBytes?: number;
+
+  @IsOptional()
+  @IsEnum(DocumentPurpose)
+  purpose?: DocumentPurpose;
+}
+
+interface ProjectDocumentResponse {
+  id: string;
+  originalName: string;
+  contentType: string;
+  sizeBytes: number | null;
+  bucket: string;
+  objectKey: string;
+  purpose: DocumentPurpose;
+  status: MediaStatus;
+  createdAt: Date;
 }
 
 class RequestRevisionDto {
@@ -647,6 +677,108 @@ class ProjectsService {
       totalFundingGoal: funding._sum.fundingTarget?.toString() ?? "0",
       totalFundingRaised: funding._sum.fundingRaised?.toString() ?? "0",
     };
+  }
+
+  async publish(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<ProjectResponse> {
+    const project = await this.getProjectForAccess(id, user);
+    if (project.status !== ProjectStatus.ACTIVE) {
+      throw new BadRequestException(
+        "Only approved (ACTIVE) projects can be published",
+      );
+    }
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.project.update({
+        where: { id },
+        data: { status: ProjectStatus.LISTED, listedAt: new Date() },
+        include: { gallery: true, dueDiligence: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: user.tenantId,
+        topic: "project.published",
+        eventType: "project.published",
+        aggregateType: "project",
+        aggregateId: id,
+        payload: { projectId: id, status: ProjectStatus.LISTED },
+      });
+      return result;
+    });
+    return this.toResponse(updated);
+  }
+
+  async findDocuments(
+    projectId: string,
+    user: AuthenticatedUser,
+  ): Promise<ProjectDocumentResponse[]> {
+    await this.getProjectForAccess(projectId, user);
+    const documents = await this.prisma.document.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    return documents.map((document) => ({
+      id: document.id,
+      originalName: document.originalName,
+      contentType: document.contentType,
+      sizeBytes: document.sizeBytes,
+      bucket: document.bucket,
+      objectKey: document.objectKey,
+      purpose: document.purpose,
+      status: document.status,
+      createdAt: document.createdAt,
+    }));
+  }
+
+  async createDocument(
+    projectId: string,
+    dto: CreateProjectDocumentDto,
+    user: AuthenticatedUser,
+  ): Promise<{ documentId: string; bucket: string; objectKey: string; uploadUrl: string; expiresInSeconds: number; status: MediaStatus }> {
+    const project = await this.getProjectForAccess(projectId, user);
+    this.permissions.assertOwnerOrAdmin(user, project.ownerUserId);
+    const documentId = cryptoRandomId();
+    const objectKey = this.storage.buildObjectKey(
+      ["tenants", project.tenantId, "projects", project.id, "documents", documentId],
+      dto.fileName,
+    );
+    const intent = await this.storage.createUploadIntent(
+      objectKey,
+      dto.contentType,
+    );
+    await this.prisma.document.create({
+      data: {
+        id: documentId,
+        tenantId: project.tenantId,
+        ownerUserId: user.id,
+        projectId,
+        originalName: dto.fileName,
+        contentType: dto.contentType,
+        sizeBytes: dto.sizeBytes,
+        bucket: intent.bucket,
+        objectKey: intent.objectKey,
+        purpose: dto.purpose ?? DocumentPurpose.GENERAL,
+        status: MediaStatus.PENDING_UPLOAD,
+      },
+    });
+    return {
+      documentId,
+      bucket: intent.bucket,
+      objectKey: intent.objectKey,
+      uploadUrl: intent.uploadUrl,
+      expiresInSeconds: intent.expiresInSeconds,
+      status: MediaStatus.PENDING_UPLOAD,
+    };
+  }
+
+  async removeMilestone(id: string, user: AuthenticatedUser): Promise<void> {
+    const milestone = await this.prisma.milestone.findUnique({
+      where: { id },
+      include: { project: true },
+    });
+    if (!milestone) throw new NotFoundException("Milestone not found");
+    this.permissions.assertOwnerOrAdmin(user, milestone.project.ownerUserId);
+    await this.prisma.milestone.delete({ where: { id } });
   }
 
   async findMilestones(
@@ -1134,6 +1266,32 @@ class ProjectsController {
     return this.projectsService.createMilestone(id, dto, user);
   }
 
+  @Post(":id/publish")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  publish(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ProjectResponse> {
+    return this.projectsService.publish(id, user);
+  }
+
+  @Get(":id/documents")
+  findDocuments(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ProjectDocumentResponse[]> {
+    return this.projectsService.findDocuments(id, user);
+  }
+
+  @Post(":id/documents")
+  createDocument(
+    @Param("id") id: string,
+    @Body() dto: CreateProjectDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ documentId: string; bucket: string; objectKey: string; uploadUrl: string; expiresInSeconds: number; status: MediaStatus }> {
+    return this.projectsService.createDocument(id, dto, user);
+  }
+
   @Post(":id/gallery/upload-intents")
   createGalleryUploadIntent(
     @Param("id") id: string,
@@ -1200,6 +1358,15 @@ class MilestonesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown> {
     return this.projectsService.completeMilestone(id, user);
+  }
+
+  @Delete(":id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeMilestone(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.projectsService.removeMilestone(id, user);
   }
 }
 

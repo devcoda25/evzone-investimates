@@ -386,6 +386,7 @@ model User {
   governanceVoteCasts GovernanceVoteCast[]
   kycApplications     KycApplication[]
   kybApplications     KybApplication[]
+  assignedTasks       DueDiligenceTask[] @relation("TaskAssignee")
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -605,55 +606,68 @@ model Milestone {
 }
 
 model MediaAsset {
-  id              String       @id @default(uuid())
-  tenantId        String
-  projectId       String?
-  ownerUserId     String
-  bucket          String
-  objectKey       String
-  publicUrl       String?
-  contentType     String
-  sizeBytes       Int?
-  checksum        String?
-  status          MediaStatus  @default(PENDING_UPLOAD)
-  purpose         MediaPurpose
-  width           Int?
-  height          Int?
-  altText         String?
-  sortOrder       Int          @default(0)
+  id                  String       @id @default(uuid())
+  tenantId            String
+  projectId           String?
+  ownerUserId         String
+  dueDiligenceCaseId  String?
+  dueDiligenceTaskId  String?
+  bucket              String
+  objectKey           String
+  publicUrl           String?
+  contentType         String
+  sizeBytes           Int?
+  checksum            String?
+  status              MediaStatus  @default(PENDING_UPLOAD)
+  purpose             MediaPurpose
+  width               Int?
+  height              Int?
+  altText             String?
+  sortOrder           Int          @default(0)
 
-  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project             Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dueDiligenceCase    DueDiligenceCase? @relation("CaseEvidenceMedia", fields: [dueDiligenceCaseId], references: [id], onDelete: SetNull)
+  dueDiligenceTask    DueDiligenceTask? @relation(fields: [dueDiligenceTaskId], references: [id], onDelete: SetNull)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([tenantId, projectId])
   @@index([status])
+  @@index([dueDiligenceCaseId])
+  @@index([dueDiligenceTaskId])
   @@unique([bucket, objectKey])
 }
 
 model Document {
-  id              String          @id @default(uuid())
-  tenantId        String
-  ownerUserId     String
-  projectId       String?
-  mediaAssetId    String?
-  originalName    String
-  contentType     String
-  sizeBytes       Int?
-  bucket          String
-  objectKey       String
-  purpose         DocumentPurpose @default(GENERAL)
-  status          MediaStatus     @default(PENDING_UPLOAD)
-  deletedAt       DateTime?
+  id                  String          @id @default(uuid())
+  tenantId            String
+  ownerUserId         String
+  projectId           String?
+  mediaAssetId        String?
+  dueDiligenceCaseId  String?
+  dueDiligenceTaskId  String?
+  originalName        String
+  contentType         String
+  sizeBytes           Int?
+  bucket              String
+  objectKey           String
+  purpose             DocumentPurpose @default(GENERAL)
+  status              MediaStatus     @default(PENDING_UPLOAD)
+  deletedAt           DateTime?
 
-  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project             Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dueDiligenceCase    DueDiligenceCase? @relation("CaseEvidenceDocuments", fields: [dueDiligenceCaseId], references: [id], onDelete: SetNull)
+  dueDiligenceTask    DueDiligenceTask? @relation(fields: [dueDiligenceTaskId], references: [id], onDelete: SetNull)
+  finalReportForCases DueDiligenceCase? @relation("CaseFinalReport")
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([tenantId, ownerUserId])
   @@index([projectId])
+  @@index([dueDiligenceCaseId])
+  @@index([dueDiligenceTaskId])
   @@unique([bucket, objectKey])
 }
 
@@ -666,7 +680,7 @@ model DueDiligenceCase {
   riskScore       Int?
   riskRating      RiskRating?
   summary         String?
-  finalReportDocumentId String?
+  finalReportDocumentId String? @unique
   assignedAt      DateTime?
   startedAt       DateTime?
   submittedAt     DateTime?
@@ -676,10 +690,13 @@ model DueDiligenceCase {
   assessments     Json?
 
   project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignedAssessor AssessorProfile? @relation("AssignedAssessor", fields: [assignedAssessorId], references: [userId], onDelete: SetNull)
-  tasks           DueDiligenceTask[]
+  assignedAssessor    AssessorProfile?  @relation("AssignedAssessor", fields: [assignedAssessorId], references: [userId], onDelete: SetNull)
+  tasks               DueDiligenceTask[]
+  evidenceDocuments   Document[]        @relation("CaseEvidenceDocuments")
+  evidenceMedia       MediaAsset[]      @relation("CaseEvidenceMedia")
+  finalReportDocument Document?         @relation("CaseFinalReport", fields: [finalReportDocumentId], references: [id], onDelete: SetNull)
 
-  createdAt       DateTime @default(now())
+  createdAt           DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([tenantId, status])
@@ -687,21 +704,25 @@ model DueDiligenceCase {
 }
 
 model DueDiligenceTask {
-  id          String               @id @default(uuid())
-  caseId      String
-  category    DueDiligenceCategory
-  title       String
-  status      TaskStatus           @default(OPEN)
-  assignedTo  String?
-  dueAt       DateTime?
-  notes       String?
+  id               String               @id @default(uuid())
+  caseId           String
+  category         DueDiligenceCategory
+  title            String
+  status           TaskStatus           @default(OPEN)
+  assignedToUserId String?
+  dueAt            DateTime?
+  notes            String?
 
-  case        DueDiligenceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case             DueDiligenceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignedTo       User?            @relation("TaskAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  evidenceDocuments Document[]
+  evidenceMedia    MediaAsset[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([caseId, status])
+  @@index([assignedToUserId])
 }
 
 model Deal {
