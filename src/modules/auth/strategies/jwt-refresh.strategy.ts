@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { Request } from 'express';
+import * as bcrypt from 'bcrypt';
 import { RefreshToken } from '@modules/auth/entities/refresh-token.entity';
 import { User } from '@modules/users/entities/user.entity';
 
@@ -51,7 +52,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
     });
   }
 
-  async validate(req: Request, payload: RefreshJwtPayload): Promise<{ user: User; tokenId: string }> {
+  async validate(req: Request, payload: RefreshJwtPayload): Promise<any> {
     const tokenString =
       req.body?.refreshToken ||
       req.cookies?.refreshToken ||
@@ -63,8 +64,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       throw new UnauthorizedException('Refresh token not provided');
     }
 
-    // Find the stored refresh token record by matching the token hash
-    // The jti in the payload is the token ID
+    // Find the stored refresh token record
     const storedToken = await this.refreshTokenRepository.findOne({
       where: {
         id: payload.jti,
@@ -78,9 +78,11 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       throw new UnauthorizedException('Refresh token is invalid, expired, or has been revoked');
     }
 
-    // Verify the token value matches (the stored token is hashed)
-    // For simplicity, we check via the jti claim which is the token ID
-    // The actual token string validation happens via JWT signature verification
+    // Verify the token hash matches for extra security
+    const hashValid = await bcrypt.compare(tokenString, storedToken.token);
+    if (!hashValid) {
+      throw new UnauthorizedException('Refresh token verification failed');
+    }
 
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
@@ -91,6 +93,15 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       throw new UnauthorizedException('User not found');
     }
 
-    return { user, tokenId: payload.jti };
+    // Return a plain object with the fields CurrentUser decorator expects
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      status: user.status,
+      tokenId: payload.jti,
+    };
   }
 }

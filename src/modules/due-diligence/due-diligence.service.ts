@@ -47,13 +47,13 @@ export class DueDiligenceService {
     }
 
     // Verify assessor exists and has ASSESSOR role
-    const provider = await this.userRepo.findOne({
-      where: { id: dto.providerId },
+    const assessor = await this.userRepo.findOne({
+      where: { id: dto.assessorId },
     });
-    if (!provider) {
+    if (!assessor) {
       throw new NotFoundException('Assessor not found');
     }
-    if (provider.role !== UserRole.ASSESSOR) {
+    if (assessor.role !== UserRole.ASSESSOR) {
       throw new BadRequestException('Selected user is not an assessor');
     }
 
@@ -75,7 +75,7 @@ export class DueDiligenceService {
 
     const engagement = this.engagementRepo.create({
       projectId: dto.projectId,
-      providerId: dto.providerId,
+      assessorId: dto.assessorId,
       status: DueDiligenceStatus.ASSIGNED,
       dueDate: new Date(dto.dueDate),
       notes: dto.notes,
@@ -84,10 +84,10 @@ export class DueDiligenceService {
 
     const saved = await this.engagementRepo.save(engagement);
 
-    // Update project's due diligence status and assigned provider
+    // Update project's due diligence status and assigned assessor
     await this.projectRepo.update(dto.projectId, {
       dueDiligenceStatus: 'ASSIGNED',
-      assessorAssignedId: dto.providerId,
+      assessorAssignedId: dto.assessorId,
     });
 
     return this.findEngagementById((saved as DueDiligenceEngagement).id);
@@ -101,28 +101,28 @@ export class DueDiligenceService {
     userId: string,
     userRole: UserRole,
   ): Promise<PaginatedResponse<DueDiligenceEngagement>> {
-    const { page = 1, limit = 20, status, providerId, projectId, sortBy = 'createdAt', sortOrder = 'DESC' } = filter;
+    const { page = 1, limit = 20, status, assessorId, projectId, sortBy = 'createdAt', sortOrder = 'DESC' } = filter;
     const skip = (page - 1) * limit;
 
     const qb = this.engagementRepo.createQueryBuilder('engagement')
       .leftJoinAndSelect('engagement.project', 'project')
-      .leftJoinAndSelect('engagement.provider', 'provider')
-      .leftJoinAndSelect('provider.assessorProfile', 'assessorProfile')
+      .leftJoinAndSelect('engagement.assessor', 'assessor')
+      .leftJoinAndSelect('assessor.assessorProfile', 'assessorProfile')
       .orderBy(`engagement.${sortBy}`, sortOrder)
       .skip(skip)
       .take(limit);
 
     // Assessors only see their own engagements
     if (userRole === UserRole.ASSESSOR) {
-      qb.andWhere('engagement.providerId = :userId', { userId });
+      qb.andWhere('engagement.assessorId = :userId', { userId });
     }
 
     if (status) {
       qb.andWhere('engagement.status = :status', { status });
     }
 
-    if (providerId && userRole === UserRole.ADMIN) {
-      qb.andWhere('engagement.providerId = :providerId', { providerId });
+    if (assessorId && userRole === UserRole.ADMIN) {
+      qb.andWhere('engagement.assessorId = :assessorId', { assessorId });
     }
 
     if (projectId) {
@@ -145,12 +145,12 @@ export class DueDiligenceService {
   }
 
   /**
-   * Get engagement by ID with project and provider details
+   * Get engagement by ID with project and assessor details
    */
   async findEngagementById(id: string): Promise<DueDiligenceEngagement> {
     const engagement = await this.engagementRepo.findOne({
       where: { id },
-      relations: ['project', 'provider', 'provider.assessorProfile']
+      relations: ['project', 'assessor', 'assessor.assessorProfile']
     });
 
     if (!engagement) {
@@ -171,7 +171,7 @@ export class DueDiligenceService {
     const engagement = await this.findEngagementById(id);
 
     // Assessors can only access their own engagements
-    if (userRole === UserRole.ASSESSOR && engagement.providerId !== userId) {
+    if (userRole === UserRole.ASSESSOR && engagement.assessorId !== userId) {
       throw new ForbiddenException('You can only access your own engagements');
     }
 
@@ -179,15 +179,15 @@ export class DueDiligenceService {
   }
 
   /**
-   * Get engagements for a specific provider
+   * Get engagements for a specific assessor
    */
-  async findByProvider(
-    providerId: string,
+  async findByAssessor(
+    assessorId: string,
     filter: EngagementFilterDto,
   ): Promise<PaginatedResponse<DueDiligenceEngagement>> {
-    const filterWithProvider = { ...filter, providerId };
-    // Pass ADMIN role to bypass the user restriction and apply our own providerId filter
-    return this.findEngagements(filterWithProvider, providerId, UserRole.ADMIN);
+    const filterWithAssessor = { ...filter, assessorId };
+    // Pass ADMIN role to bypass the user restriction and apply our own assessorId filter
+    return this.findEngagements(filterWithAssessor, assessorId, UserRole.ADMIN);
   }
 
   /**
@@ -203,7 +203,7 @@ export class DueDiligenceService {
 
     // Assessors can only update their own engagements and cannot change certain statuses
     if (userRole === UserRole.ASSESSOR) {
-      if (engagement.providerId !== userId) {
+      if (engagement.assessorId !== userId) {
         throw new ForbiddenException('You can only update your own engagements');
       }
       // Assessors cannot set COMPLETED or REJECTED status
@@ -250,11 +250,11 @@ export class DueDiligenceService {
    */
   async startEngagement(
     id: string,
-    providerId: string,
+    assessorId: string,
   ): Promise<DueDiligenceEngagement> {
     const engagement = await this.findEngagementById(id);
 
-    if (engagement.providerId !== providerId) {
+    if (engagement.assessorId !== assessorId) {
       throw new ForbiddenException('You can only start your own engagements');
     }
 
@@ -280,12 +280,12 @@ export class DueDiligenceService {
    */
   async submitReport(
     id: string,
-    providerId: string,
+    assessorId: string,
     dto: SubmitReportDto,
   ): Promise<DueDiligenceEngagement> {
     const engagement = await this.findEngagementById(id);
 
-    if (engagement.providerId !== providerId) {
+    if (engagement.assessorId !== assessorId) {
       throw new ForbiddenException('You can only submit reports for your own engagements');
     }
 
@@ -367,7 +367,7 @@ export class DueDiligenceService {
         dueDiligenceScore: engagement.overallScore,
       });
     } else {
-      // REJECTED - set back so provider can resubmit
+      // REJECTED - set back so assessor can resubmit
       await this.projectRepo.update(engagement.projectId, {
         dueDiligenceStatus: 'FAILED',
       });
@@ -377,7 +377,7 @@ export class DueDiligenceService {
   }
 
   /**
-   * Find projects available for due diligence (ACTIVE or UNDER_REVIEW without provider)
+   * Find projects available for due diligence (ACTIVE or UNDER_REVIEW without assessor)
    */
   async findAvailableProjects(): Promise<Project[]> {
     // Find projects that are ACTIVE or UNDER_REVIEW
@@ -408,7 +408,7 @@ export class DueDiligenceService {
   }
 
   /**
-   * Find all providers with their profiles
+   * Find all assessors with their profiles
    */
   async findAssessors(
     filter: AssessorFilterDto,

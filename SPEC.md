@@ -1,7 +1,7 @@
 # EVzone Backend — Complete API Specification
 
 ## Overview
-Complete NestJS backend for the EVzone Global Green Finance Platform. Serves 4 frontend applications: Investor, Entrepreneur, Provider, and Admin.
+Complete NestJS backend for the EVzone Global Green Finance Platform. Serves 4 frontend applications: Investor, Entrepreneur, Assessor, and Admin.
 
 ## Architecture
 - **Framework**: NestJS 10 + TypeScript 5
@@ -35,7 +35,7 @@ src/
 │   ├── users/                 # Users & profiles
 │   ├── projects/              # Projects, deals, campaigns
 │   ├── investments/           # Investments, portfolio, transactions
-│   ├── due-diligence/         # Provider engagements & reports
+│   ├── due-diligence/         # Assessor engagements & reports
 │   ├── admin/                 # Admin oversight (compliance, risk, disputes, audit)
 │   ├── notifications/         # In-app notifications
 │   ├── documents/             # File uploads
@@ -74,7 +74,7 @@ class User {
   // Relations
   investorProfile?: InvestorProfile
   entrepreneurProfile?: EntrepreneurProfile
-  providerProfile?: ProviderProfile
+  assessorProfile?: AssessorProfile
   investments?: Investment[]
   projects?: Project[] (as entrepreneur)
   messagesSent?: Message[]
@@ -128,10 +128,10 @@ class EntrepreneurProfile {
 }
 ```
 
-### ProviderProfile
+### AssessorProfile
 ```typescript
-@Entity('provider_profiles')
-class ProviderProfile {
+@Entity('assessor_profiles')
+class AssessorProfile {
   id: UUID (PK)
   userId: UUID (FK -> users)
   organizationName: string
@@ -204,7 +204,7 @@ class Project {
   // Due diligence
   dueDiligenceStatus: enum [NOT_STARTED, IN_PROGRESS, COMPLETED, FAILED] (default: NOT_STARTED)
   dueDiligenceScore: number (nullable, 0-100)
-  providerAssignedId: UUID (nullable, FK -> users)
+  assessorAssignedId: UUID (nullable, FK -> users)
   
   createdAt: Date
   updatedAt: Date
@@ -462,7 +462,7 @@ class RefreshToken {
 | GET | `/projects/:id/milestones` | List milestones | JWT |
 | POST | `/projects/:id/milestones` | Create milestone | own |
 | PATCH | `/milestones/:id` | Update milestone | own/ADMIN |
-| POST | `/milestones/:id/complete` | Mark complete | own/provider |
+| POST | `/milestones/:id/complete` | Mark complete | own/assessor |
 | GET | `/projects/:id/documents` | List project documents | JWT |
 | POST | `/projects/:id/documents` | Upload document | own |
 | GET | `/projects/stats/overview` | Project statistics | ADMIN |
@@ -495,8 +495,8 @@ class RefreshToken {
 | POST | `/due-diligence/engagements/:id/review` | Review report | ADMIN |
 | GET | `/due-diligence/projects` | Available projects to assess | PROVIDER |
 | GET | `/due-diligence/projects/:id/assessments` | Get assessments | PROVIDER/ADMIN |
-| GET | `/due-diligence/providers` | List providers | ADMIN |
-| GET | `/due-diligence/providers/:id` | Get provider profile | ADMIN |
+| GET | `/due-diligence/assessors` | List assessors | ADMIN |
+| GET | `/due-diligence/assessors/:id` | Get assessor profile | ADMIN |
 | GET | `/due-diligence/stats/overview` | DD statistics | ADMIN |
 
 ### Admin Module (`/api/admin`)
@@ -517,10 +517,10 @@ class RefreshToken {
 | POST | `/admin/disputes/:id/resolve` | Resolve dispute | ADMIN |
 | GET | `/admin/audit-logs` | Audit log entries | ADMIN |
 | GET | `/admin/audit-logs/:id` | Audit log detail | ADMIN |
-| GET | `/admin/providers` | Provider oversight list | ADMIN |
-| GET | `/admin/providers/:id` | Provider oversight detail | ADMIN |
-| PATCH | `/admin/providers/:id/verify` | Verify provider | ADMIN |
-| POST | `/admin/providers/:id/suspend` | Suspend provider | ADMIN |
+| GET | `/admin/assessors` | Assessor oversight list | ADMIN |
+| GET | `/admin/assessors/:id` | Assessor oversight detail | ADMIN |
+| PATCH | `/admin/assessors/:id/verify` | Verify assessor | ADMIN |
+| POST | `/admin/assessors/:id/suspend` | Suspend assessor | ADMIN |
 | GET | `/admin/transactions` | All transactions | ADMIN |
 | GET | `/admin/transactions/stats` | Transaction stats | ADMIN |
 | GET | `/admin/user-activities` | User activity feed | ADMIN |

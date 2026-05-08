@@ -1,6 +1,6 @@
 # EVzone Backend API Endpoint Map
 
-> Generated from frontend mock data analysis across all 4 apps (admin, investor, entrepreneur, provider/assessor).
+> Generated from frontend mock data analysis across all 4 apps (admin, investor, entrepreneur, assessor).
 > Maps every frontend data structure to the exact backend endpoint needed.
 
 ---
@@ -395,7 +395,7 @@
 ## 16. ADMIN DASHBOARD
 
 ### Frontend features:
-- KPI cards: Pending Users, Active Providers, Flagged Transactions, Open Alerts
+- KPI cards: Pending Users, Active Assessors, Flagged Transactions, Open Alerts
 - Charts: User Distribution (pie), Transaction Volume (bar), KYC Pipeline
 - Quick actions
 - Compliance alerts feed

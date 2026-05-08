@@ -14,8 +14,8 @@ export class DueDiligenceEngagement {
   @Column({ type: 'uuid' })
   projectId: string;
 
-  @Column({ type: 'uuid' })
-  providerId: string;
+  @Column({ type: 'uuid', name: 'providerId' })
+  assessorId: string;
 
   @Column({ type: 'enum', enum: DueDiligenceStatus, default: DueDiligenceStatus.ASSIGNED })
   status: DueDiligenceStatus;
@@ -74,5 +74,5 @@ export class DueDiligenceEngagement {
 
   @ManyToOne(() => User, (user) => user.id)
   @JoinColumn({ name: 'providerId' })
-  provider: User;
+  assessor: User;
 }

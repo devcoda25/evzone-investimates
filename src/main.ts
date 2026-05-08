@@ -7,7 +7,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from '@common/filters/all-exceptions.filter';
 import { TransformInterceptor } from '@common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from '@common/interceptors/logging.interceptor';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 
 async function bootstrap() {
@@ -54,9 +54,9 @@ async function bootstrap() {
   }));
 
   // Global guards, interceptors & filters
-  const oidcGuard = app.get(OidcAuthGuard);
+  const unifiedAuthGuard = app.get(UnifiedAuthGuard);
   const rolesGuard = app.get(RolesGuard);
-  app.useGlobalGuards(oidcGuard, rolesGuard);
+  app.useGlobalGuards(unifiedAuthGuard, rolesGuard);
   app.useGlobalInterceptors(
     new TransformInterceptor(),
     new LoggingInterceptor(),
@@ -68,7 +68,7 @@ async function bootstrap() {
     .setTitle('EVzone Platform API')
     .setDescription(
       'Complete REST API for the EVzone Global Green Finance Platform. ' +
-      'Serves 4 applications: Investor, Entrepreneur, Provider, and Admin. ' +
+      'Serves 4 applications: Investor, Entrepreneur, Assessor, and Admin. ' +
       'All endpoints require authentication unless marked as [Public].'
     )
     .setVersion('1.0.0')
@@ -82,7 +82,7 @@ async function bootstrap() {
     .addTag('Users', 'User management & profiles')
     .addTag('Projects', 'Green energy projects & campaigns')
     .addTag('Investments', 'Investments, portfolio & transactions')
-    .addTag('Due Diligence', 'Provider engagements & verification')
+    .addTag('Due Diligence', 'Assessor engagements & verification')
     .addTag('Admin', 'Platform governance & oversight')
     .addTag('Notifications', 'In-app notifications')
     .addTag('Messages', 'Internal messaging')

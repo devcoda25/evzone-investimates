@@ -6,9 +6,9 @@ export class CreateEngagementDto {
   @IsUUID()
   projectId: string;
 
-  @ApiProperty({ description: 'Provider user ID to assign the engagement to' })
+  @ApiProperty({ description: 'Assessor user ID to assign the engagement to' })
   @IsUUID()
-  providerId: string;
+  assessorId: string;
 
   @ApiProperty({ description: 'Due date for the engagement' })
   @IsDateString()

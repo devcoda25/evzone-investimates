@@ -142,7 +142,7 @@ async function seed() {
     // Assessor 1
     {
       email: 'dr.kwame@email.com',
-      password: hash('Provider123!'),
+      password: hash('Assessor123!'),
       firstName: 'Dr. Kwame',
       lastName: 'Asante',
       role: UserRole.ASSESSOR,
@@ -157,7 +157,7 @@ async function seed() {
     // Assessor 2
     {
       email: 'elena.muller@email.com',
-      password: hash('Provider123!'),
+      password: hash('Assessor123!'),
       firstName: 'Elena',
       lastName: 'Muller',
       role: UserRole.ASSESSOR,
@@ -582,7 +582,7 @@ async function seed() {
   await ddRepo.save([
     {
       projectId: projects[0].id,
-      providerId: kwame.id,
+      assessorId: kwame.id,
       status: DueDiligenceStatus.COMPLETED,
       financialAssessment: { score: 88, findings: 'Strong financials', rating: 'GOOD' },
       technicalAssessment: { score: 85, findings: 'Proven technology', rating: 'GOOD' },
@@ -600,7 +600,7 @@ async function seed() {
     },
     {
       projectId: projects[1].id,
-      providerId: elena.id,
+      assessorId: elena.id,
       status: DueDiligenceStatus.IN_PROGRESS,
       assignedAt: new Date('2025-02-01'),
       startedAt: new Date('2025-02-10'),
@@ -609,7 +609,7 @@ async function seed() {
     },
     {
       projectId: projects[7].id,
-      providerId: elena.id,
+      assessorId: elena.id,
       status: DueDiligenceStatus.COMPLETED,
       financialAssessment: { score: 90, findings: 'Solid PPA structure', rating: 'EXCELLENT' },
       technicalAssessment: { score: 88, findings: 'Proven solar + battery tech', rating: 'GOOD' },
@@ -634,8 +634,8 @@ async function seed() {
   await alertRepo.save([
     { type: 'KYC_ISSUE', severity: ComplianceAlertSeverity.HIGH, entityType: 'USER', entityId: raj.id, title: 'KYC Documents Pending Review', description: 'Entrepreneur Raj Patel submitted KYC documents that require manual review.', status: ComplianceAlertStatus.OPEN, assignedTo: admin.id },
     { type: 'AML_FLAG', severity: ComplianceAlertSeverity.MEDIUM, entityType: 'TRANSACTION', entityId: '', title: 'Large Deposit Alert', description: 'Unusual deposit pattern detected for investor Marcus Johnson.', status: ComplianceAlertStatus.UNDER_REVIEW, assignedTo: admin.id },
-    { type: 'DOCUMENT_EXPIRY', severity: ComplianceAlertSeverity.LOW, entityType: 'USER', entityId: kwame.id, title: 'Provider Certification Expiring', description: 'Dr. Kwame Asante\'s CFA certification expires in 30 days.', status: ComplianceAlertStatus.OPEN },
-    { type: 'MANUAL_REVIEW', severity: ComplianceAlertSeverity.MEDIUM, entityType: 'PROJECT', entityId: projects[2].id, title: 'New Project Requires DD Assignment', description: 'Vayu Gujarat Wind Farm is UNDER_REVIEW and needs a due diligence provider assigned.', status: ComplianceAlertStatus.OPEN, assignedTo: admin.id },
+    { type: 'DOCUMENT_EXPIRY', severity: ComplianceAlertSeverity.LOW, entityType: 'USER', entityId: kwame.id, title: 'Assessor Certification Expiring', description: 'Dr. Kwame Asante\'s CFA certification expires in 30 days.', status: ComplianceAlertStatus.OPEN },
+    { type: 'MANUAL_REVIEW', severity: ComplianceAlertSeverity.MEDIUM, entityType: 'PROJECT', entityId: projects[2].id, title: 'New Project Requires DD Assignment', description: 'Vayu Gujarat Wind Farm is UNDER_REVIEW and needs a due diligence assessor assigned.', status: ComplianceAlertStatus.OPEN, assignedTo: admin.id },
   ] as ComplianceAlert[]);
   console.log('Created compliance alerts');
 
@@ -655,7 +655,7 @@ async function seed() {
     { userId: admin.id, action: 'USER_LOGIN', entityType: 'USER', entityId: admin.id, ipAddress: '192.168.1.1' },
     { userId: admin.id, action: 'PROJECT_APPROVED', entityType: 'PROJECT', entityId: projects[0].id, newValues: { status: 'ACTIVE' } },
     { userId: admin.id, action: 'KYC_VERIFIED', entityType: 'USER', entityId: amina.id, newValues: { kycStatus: 'VERIFIED' } },
-    { userId: admin.id, action: 'ENGAGEMENT_CREATED', entityType: 'DUE_DILIGENCE', entityId: '', newValues: { providerId: kwame.id, projectId: projects[0].id } },
+    { userId: admin.id, action: 'ENGAGEMENT_CREATED', entityType: 'DUE_DILIGENCE', entityId: '', newValues: { assessorId: kwame.id, projectId: projects[0].id } },
   ] as AuditLog[]);
   console.log('Created audit logs');
 

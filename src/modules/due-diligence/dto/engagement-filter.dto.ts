@@ -9,10 +9,10 @@ export class EngagementFilterDto extends PaginationDto {
   @IsEnum(DueDiligenceStatus)
   status?: DueDiligenceStatus;
 
-  @ApiPropertyOptional({ description: 'Filter by provider ID' })
+  @ApiPropertyOptional({ description: 'Filter by assessor ID' })
   @IsOptional()
   @IsUUID()
-  providerId?: string;
+  assessorId?: string;
 
   @ApiPropertyOptional({ description: 'Filter by project ID' })
   @IsOptional()

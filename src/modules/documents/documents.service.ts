@@ -3,96 +3,85 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { existsSync, promises as fs } from 'fs';
-import { join } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+  import { InjectRepository } from '@nestjs/typeorm';
+  import { Repository } from 'typeorm';
+  import { existsSync, promises as fs } from 'fs';
+  import { join } from 'path';
+  import { v4 as uuidv4 } from 'uuid';
 
-import { DocumentMeta } from './interfaces/document.interface';
+  import { Document } from './entities/document.entity';
 
-const UPLOAD_DIR = join(process.cwd(), 'uploads', 'documents');
-const META_FILE = join(UPLOAD_DIR, '.metadata.json');
+  const UPLOAD_DIR = join(process.cwd(), 'uploads', 'documents');
 
-@Injectable()
-export class DocumentsService {
-  constructor() {
-    this.ensureUploadDir();
-  }
-
-  private async ensureUploadDir(): Promise<void> {
-    if (!existsSync(UPLOAD_DIR)) {
-      await fs.mkdir(UPLOAD_DIR, { recursive: true });
-    }
-  }
-
-  private async readMeta(): Promise<DocumentMeta[]> {
-    try {
-      if (!existsSync(META_FILE)) return [];
-      const raw = await fs.readFile(META_FILE, 'utf-8');
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-
-  private async writeMeta(docs: DocumentMeta[]): Promise<void> {
-    await fs.writeFile(META_FILE, JSON.stringify(docs, null, 2));
-  }
-
-  async upload(
-    file: Express.Multer.File,
-    userId: string,
-  ): Promise<DocumentMeta> {
-    if (!file) {
-      throw new BadRequestException('No file provided');
+  @Injectable()
+  export class DocumentsService {
+    constructor(
+      @InjectRepository(Document)
+      private readonly documentRepository: Repository<Document>,
+    ) {
+      this.ensureUploadDir();
     }
 
-    await this.ensureUploadDir();
+    private async ensureUploadDir(): Promise<void> {
+      if (!existsSync(UPLOAD_DIR)) {
+        await fs.mkdir(UPLOAD_DIR, { recursive: true });
+      }
+    }
 
-    const id = uuidv4();
-    const ext = file.originalname.split('.').pop() || 'bin';
-    const fileName = `${id}.${ext}`;
-    const filePath = join(UPLOAD_DIR, fileName);
+    async upload(
+      file: Express.Multer.File,
+      userId: string,
+      projectId?: string,
+      category?: string,
+    ): Promise<Document> {
+      if (!file) {
+        throw new BadRequestException('No file provided');
+      }
 
-    await fs.writeFile(filePath, file.buffer);
+      await this.ensureUploadDir();
 
-    const doc: DocumentMeta = {
-      id,
-      originalName: file.originalname,
-      fileName,
-      mimeType: file.mimetype,
-      size: file.size,
-      path: filePath,
-      url: `/uploads/documents/${fileName}`,
-      uploadedBy: userId,
-      createdAt: new Date().toISOString(),
-    };
+      const id = uuidv4();
+      const ext = file.originalname.split('.').pop() || 'bin';
+      const fileName = `${id}.${ext}`;
+      const filePath = join(UPLOAD_DIR, fileName);
 
-    const meta = await this.readMeta();
-    meta.push(doc);
-    await this.writeMeta(meta);
+      await fs.writeFile(filePath, file.buffer);
 
-    return doc;
+      const doc = this.documentRepository.create({
+        id,
+        originalName: file.originalname,
+        fileName,
+        mimeType: file.mimetype,
+        size: file.size,
+        path: filePath,
+        url: `/uploads/documents/${fileName}`,
+        uploadedBy: userId,
+        projectId,
+        category,
+      });
+
+      return this.documentRepository.save(doc);
+    }
+
+    async findByUser(userId: string): Promise<Document[]> {
+      return this.documentRepository.find({
+        where: { uploadedBy: userId },
+        order: { createdAt: 'DESC' },
+      });
+    }
+
+    async findById(id: string): Promise<Document> {
+      const doc = await this.documentRepository.findOne({ where: { id } });
+      if (!doc) {
+        throw new NotFoundException(`Document with ID "${id}" not found`);
+      }
+      return doc;
+    }
+
+    async softDelete(id: string): Promise<void> {
+      const result = await this.documentRepository.softDelete(id);
+      if (result.affected === 0) {
+        throw new NotFoundException(`Document with ID "${id}" not found`);
+      }
+    }
   }
-
-  async findByUser(userId: string): Promise<DocumentMeta[]> {
-    const meta = await this.readMeta();
-    return meta
-      .filter((d) => d.uploadedBy === userId && !d.deletedAt)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }
-
-  async findById(id: string): Promise<DocumentMeta> {
-    const meta = await this.readMeta();
-    const doc = meta.find((d) => d.id === id && !d.deletedAt);
-    if (!doc) throw new NotFoundException(`Document with ID "${id}" not found`);
-    return doc;
-  }
-
-  async softDelete(id: string): Promise<void> {
-    const meta = await this.readMeta();
-    const doc = meta.find((d) => d.id === id && !d.deletedAt);
-    if (!doc) throw new NotFoundException(`Document with ID "${id}" not found`);
-    doc.deletedAt = new Date().toISOString();
-    await this.writeMeta(meta);
-  }
-}

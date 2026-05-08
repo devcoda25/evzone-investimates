@@ -63,7 +63,7 @@ export class DueDiligenceController {
 
   @Post('engagements')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Create engagement (ADMIN assigns provider to project)' })
+  @ApiOperation({ summary: 'Create engagement (ADMIN assigns assessor to project)' })
   @ApiResponse({ status: 201, description: 'Engagement created' })
   @ApiResponse({ status: 400, description: 'Invalid input or project already has active engagement' })
   @HttpCode(HttpStatus.CREATED)
