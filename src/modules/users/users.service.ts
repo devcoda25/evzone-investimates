@@ -1,11 +1,8 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Brackets } from 'typeorm';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { User } from './entities/user.entity';
-import { InvestorProfile } from './entities/investor-profile.entity';
-import { EntrepreneurProfile } from './entities/entrepreneur-profile.entity';
-import { AssessorProfile } from './entities/assessor-profile.entity';
+import { PrismaService } from '@database/prisma.service';
+import { buildPaginationMeta, getSortField, getSortOrder } from '@database/prisma.helpers';
 import { UserRole, UserStatus, KycStatus } from '@common/enums';
 import { PaginatedResponse } from '@common/dto/pagination.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -15,425 +12,324 @@ import { KycSubmitDto } from './dto/kyc-submit.dto';
 import { VerifyKycDto } from './dto/verify-kyc.dto';
 import { UserFilterDto } from './dto/user-filter.dto';
 import { UserStatsDto, RoleCountDto, StatusCountDto, KycStatusCountDto } from './dto/user-stats.dto';
+import { createRoleProfile, normalizeUser, userProfileInclude } from './user.prisma';
+
+const USER_SORT_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'email',
+  'firstName',
+  'lastName',
+  'lastLoginAt',
+  'country',
+] as const;
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(InvestorProfile)
-    private readonly investorProfileRepository: Repository<InvestorProfile>,
-    @InjectRepository(EntrepreneurProfile)
-    private readonly entrepreneurProfileRepository: Repository<EntrepreneurProfile>,
-    @InjectRepository(AssessorProfile)
-    private readonly assessorProfileRepository: Repository<AssessorProfile>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Find all users with optional filtering, pagination, and search.
-   */
-  async findAll(filter: UserFilterDto): Promise<PaginatedResponse<User>> {
+  async findAll(filter: UserFilterDto): Promise<PaginatedResponse<any>> {
     const page = filter.page ?? 1;
     const limit = filter.limit ?? 20;
-    const sortBy = filter.sortBy ?? 'createdAt';
-    const sortOrder = filter.sortOrder ?? 'DESC';
-    const { role, status, kycStatus, country, search } = filter;
+    const sortBy = getSortField(filter.sortBy, USER_SORT_FIELDS, 'createdAt');
+    const sortOrder = getSortOrder(filter.sortOrder);
     const skip = (page - 1) * limit;
 
-    const queryBuilder = this.userRepository.createQueryBuilder('user');
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      role: filter.role,
+      status: filter.status,
+      kycStatus: filter.kycStatus,
+      country: filter.country,
+    };
 
-    // Apply role filter
-    if (role) {
-      queryBuilder.andWhere('user.role = :role', { role });
+    if (filter.search) {
+      where.OR = [
+        { firstName: { contains: filter.search, mode: 'insensitive' } },
+        { lastName: { contains: filter.search, mode: 'insensitive' } },
+        { email: { contains: filter.search, mode: 'insensitive' } },
+      ];
     }
 
-    // Apply status filter
-    if (status) {
-      queryBuilder.andWhere('user.status = :status', { status });
-    }
-
-    // Apply KYC status filter
-    if (kycStatus) {
-      queryBuilder.andWhere('user.kycStatus = :kycStatus', { kycStatus });
-    }
-
-    // Apply country filter
-    if (country) {
-      queryBuilder.andWhere('user.country = :country', { country });
-    }
-
-    // Apply search term across firstName, lastName, and email
-    if (search) {
-      const searchTerm = `%${search}%`;
-      queryBuilder.andWhere(
-        new Brackets((qb) => {
-          qb.where('user.firstName ILIKE :search', { search: searchTerm })
-            .orWhere('user.lastName ILIKE :search', { search: searchTerm })
-            .orWhere('user.email ILIKE :search', { search: searchTerm });
-        }),
-      );
-    }
-
-    // Get total count before applying pagination
-    const total = await queryBuilder.getCount();
-
-    // Apply sorting, pagination
-    queryBuilder
-      .orderBy(`user.${sortBy}`, sortOrder)
-      .skip(skip)
-      .take(limit);
-
-    const data = await queryBuilder.getMany();
-    const totalPages = Math.ceil(total / limit);
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: userProfileInclude,
+        skip,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
 
     return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPrevPage: page > 1,
-      },
+      data: data.map((user) => normalizeUser(user)),
+      meta: buildPaginationMeta(page, limit, total),
     };
   }
 
-  /**
-   * Find a user by their ID, eager-loading the appropriate profile based on role.
-   */
-  async findById(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { id },
-      relations: [
-        'investorProfile',
-        'entrepreneurProfile',
-        'assessorProfile',
-      ],
+  async findById(id: string): Promise<any> {
+    const user = await this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      include: userProfileInclude,
     });
 
     if (!user) {
       throw new NotFoundException(`User with ID "${id}" not found`);
     }
 
-    return user;
+    return normalizeUser(user);
   }
 
-  /**
-   * Find a user by their email address. Used for authentication lookups.
-   */
-  async findByEmail(email: string): Promise<User | null> {
-    const user = await this.userRepository.findOne({
-      where: { email },
-      relations: [
-        'investorProfile',
-        'entrepreneurProfile',
-        'assessorProfile',
-      ],
+  async findByEmail(email: string): Promise<any | null> {
+    const user = await this.prisma.user.findFirst({
+      where: { email, deletedAt: null },
+      include: userProfileInclude,
     });
 
-    return user;
+    return user ? normalizeUser(user) : null;
   }
 
-  /**
-   * Create a new user with an associated profile based on their role.
-   * Used by admin to create users directly.
-   */
-  async create(dto: CreateUserDto): Promise<User> {
-    // Check if email already exists
-    const existing = await this.userRepository.findOne({
-      where: { email: dto.email },
-      withDeleted: true,
+  async create(dto: CreateUserDto): Promise<any> {
+    const existing = await this.prisma.user.findFirst({
+      where: { email: dto.email.toLowerCase() },
     });
     if (existing) {
       throw new ConflictException('Email already in use');
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(dto.password, 12);
-
-    // Create user entity
-    const user = this.userRepository.create({
-      ...dto,
-      password: hashedPassword,
+    const password = await bcrypt.hash(dto.password, 12);
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase(),
+        password,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        role: dto.role,
+        status: dto.status,
+        country: dto.country,
+        city: dto.city,
+        bio: dto.bio,
+        avatar: dto.avatar,
+      },
     });
 
-    const savedUser = await this.userRepository.save(user);
+    await createRoleProfile(this.prisma, user.id, user.role as any);
 
-    // Create appropriate profile for the user's role
-    await this.createProfileForUser(savedUser, savedUser.role);
-
-    // Return the user with profile relations loaded
-    return this.findById(savedUser.id);
+    return this.findById(user.id);
   }
 
-  /**
-   * Update a user by ID. Syncs profile data when relevant fields change.
-   */
-  async update(id: string, dto: UpdateUserDto): Promise<User> {
+  async update(id: string, dto: UpdateUserDto): Promise<any> {
     const user = await this.findById(id);
 
-    // Check email uniqueness if being changed
-    if (dto.email && dto.email !== user.email) {
-      const existing = await this.userRepository.findOne({
-        where: { email: dto.email },
+    if (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase()) {
+      const existing = await this.prisma.user.findFirst({
+        where: {
+          email: dto.email.toLowerCase(),
+          NOT: { id },
+        },
       });
       if (existing) {
         throw new ConflictException('Email already in use');
       }
     }
 
-    // Hash password if being updated
-    const updateData: Partial<User> = { ...dto };
+    const updateData: Prisma.UserUpdateInput = {
+      email: dto.email?.toLowerCase(),
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
+      role: dto.role as any,
+      status: dto.status as any,
+      country: dto.country,
+      city: dto.city,
+      bio: dto.bio,
+      avatar: dto.avatar,
+    };
+
     if (dto.password) {
       updateData.password = await bcrypt.hash(dto.password, 12);
     }
 
-    await this.userRepository.update(id, updateData);
+    await this.prisma.user.update({
+      where: { id },
+      data: updateData,
+    });
 
-    // If role changed, ensure a profile exists for the new role
     if (dto.role && dto.role !== user.role) {
-      const userWithNewRole = Object.assign(Object.create(Object.getPrototypeOf(user)), user);
-      userWithNewRole.role = dto.role;
-      await this.createProfileForUser(userWithNewRole, dto.role);
+      await createRoleProfile(this.prisma, id, dto.role as any);
     }
 
     return this.findById(id);
   }
 
-  /**
-   * Soft delete a user by ID.
-   */
   async softDelete(id: string): Promise<void> {
-    const user = await this.findById(id);
-    await this.userRepository.softDelete(id);
+    await this.findById(id);
+    await this.prisma.user.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
   }
 
-  /**
-   * Verify or reject a user's KYC submission. Admin only.
-   */
-  async verifyKyc(id: string, dto: VerifyKycDto): Promise<User> {
+  async verifyKyc(id: string, dto: VerifyKycDto): Promise<any> {
     const user = await this.findById(id);
 
     if (user.kycStatus !== KycStatus.PENDING) {
       throw new BadRequestException('User has no pending KYC submission');
     }
 
-    const updateData: Partial<User> = {
-      kycStatus: dto.status,
-    };
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        kycStatus: dto.status as any,
+        kycVerifiedAt: dto.status === KycStatus.VERIFIED ? new Date() : null,
+      },
+    });
 
-    if (dto.status === KycStatus.VERIFIED) {
-      updateData.kycVerifiedAt = new Date();
-    }
-
-    await this.userRepository.update(id, updateData);
     return this.findById(id);
   }
 
-  /**
-   * Suspend a user account. Admin only.
-   */
-  async suspend(id: string, reason?: string): Promise<User> {
+  async suspend(id: string, reason?: string): Promise<any> {
     const user = await this.findById(id);
 
     if (user.status === UserStatus.SUSPENDED) {
       throw new BadRequestException('User is already suspended');
     }
 
-    await this.userRepository.update(id, {
-      status: UserStatus.SUSPENDED,
+    const preferences = { ...(user.preferences || {}) } as Record<string, unknown>;
+    if (reason) {
+      preferences.suspensionReason = reason;
+      preferences.suspendedAt = new Date().toISOString();
+    }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        status: UserStatus.SUSPENDED as any,
+        preferences,
+      },
     });
 
     return this.findById(id);
   }
 
-  /**
-   * Unsuspend a user account, setting status back to ACTIVE. Admin only.
-   */
-  async unsuspend(id: string): Promise<User> {
+  async unsuspend(id: string): Promise<any> {
     const user = await this.findById(id);
 
     if (user.status !== UserStatus.SUSPENDED) {
       throw new BadRequestException('User is not suspended');
     }
 
-    await this.userRepository.update(id, {
-      status: UserStatus.ACTIVE,
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: UserStatus.ACTIVE as any },
     });
 
     return this.findById(id);
   }
 
-  /**
-   * Update a user's profile fields (firstName, lastName, phone, bio, country, city, preferences, avatar).
-   */
-  async updateProfile(id: string, dto: UpdateProfileDto): Promise<User> {
-    const user = await this.findById(id);
+  async updateProfile(id: string, dto: UpdateProfileDto): Promise<any> {
+    await this.findById(id);
 
-    const { firstName, lastName, phone, bio, country, city, preferences, avatar } = dto;
-
-    // Build update object with only provided fields
-    const updateData: Partial<User> = {};
-    if (firstName !== undefined) updateData.firstName = firstName;
-    if (lastName !== undefined) updateData.lastName = lastName;
-    if (phone !== undefined) updateData.phone = phone;
-    if (bio !== undefined) updateData.bio = bio;
-    if (country !== undefined) updateData.country = country;
-    if (city !== undefined) updateData.city = city;
-    if (preferences !== undefined) updateData.preferences = preferences;
-    if (avatar !== undefined) updateData.avatar = avatar;
-
-    await this.userRepository.update(id, updateData);
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        bio: dto.bio,
+        country: dto.country,
+        city: dto.city,
+        avatar: dto.avatar,
+        preferences: dto.preferences as Prisma.InputJsonValue | undefined,
+      },
+    });
 
     return this.findById(id);
   }
 
-  /**
-   * Submit KYC documents for verification. Sets kycStatus to PENDING.
-   */
-  async submitKyc(id: string, dto: KycSubmitDto): Promise<User> {
+  async submitKyc(id: string, dto: KycSubmitDto): Promise<any> {
     const user = await this.findById(id);
 
     if (user.kycStatus === KycStatus.VERIFIED) {
       throw new BadRequestException('User is already KYC verified');
     }
 
-    // Build the merged preferences object
-    const existingPrefs = user.preferences || {};
-    const updatedPreferences: Record<string, any> = {
-      ...existingPrefs,
+    const preferences = {
+      ...(user.preferences || {}),
       kycDocuments: dto.documents,
       kycIdType: dto.idType,
       kycIdNumber: dto.idNumber,
       kycSubmittedAt: new Date().toISOString(),
-    };
-    if (dto.notes) {
-      updatedPreferences.kycNotes = dto.notes;
-    }
+      ...(dto.notes ? { kycNotes: dto.notes } : {}),
+    } as Prisma.InputJsonValue;
 
-    await this.userRepository.update(id, {
-      kycStatus: KycStatus.PENDING,
-      kycSubmittedAt: new Date(),
-      preferences: updatedPreferences,
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        kycStatus: KycStatus.PENDING as any,
+        kycSubmittedAt: new Date(),
+        preferences,
+      },
     });
 
     return this.findById(id);
   }
 
-  /**
-   * Get user statistics: count by role, status, KYC status, and new users this month.
-   */
   async getStats(): Promise<UserStatsDto> {
-    // Total users
-    const totalUsers = await this.userRepository.count();
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
+      select: {
+        role: true,
+        status: true,
+        kycStatus: true,
+        createdAt: true,
+      },
+    });
 
-    // New users this month
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const newUsersThisMonthResult = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.createdAt >= :startOfMonth', { startOfMonth })
-      .getCount();
+    const roleMap = new Map<string, number>();
+    const statusMap = new Map<string, number>();
+    const kycMap = new Map<string, number>();
+    let newUsersThisMonth = 0;
 
-    // Count by role
-    const roleCounts = await this.userRepository
-      .createQueryBuilder('user')
-      .select('user.role', 'role')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('user.role')
-      .getRawMany();
+    for (const user of users) {
+      roleMap.set(user.role, (roleMap.get(user.role) || 0) + 1);
+      statusMap.set(user.status, (statusMap.get(user.status) || 0) + 1);
+      kycMap.set(user.kycStatus, (kycMap.get(user.kycStatus) || 0) + 1);
 
-    const byRole: RoleCountDto[] = roleCounts.map((r) => ({
-      role: r.role,
-      count: parseInt(r.count, 10),
+      if (user.createdAt >= startOfMonth) {
+        newUsersThisMonth += 1;
+      }
+    }
+
+    const byRole: RoleCountDto[] = Array.from(roleMap.entries()).map(([role, count]) => ({
+      role,
+      count,
     }));
-
-    // Count by status
-    const statusCounts = await this.userRepository
-      .createQueryBuilder('user')
-      .select('user.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('user.status')
-      .getRawMany();
-
-    const byStatus: StatusCountDto[] = statusCounts.map((s) => ({
-      status: s.status,
-      count: parseInt(s.count, 10),
+    const byStatus: StatusCountDto[] = Array.from(statusMap.entries()).map(([status, count]) => ({
+      status,
+      count,
     }));
-
-    // Count by KYC status
-    const kycCounts = await this.userRepository
-      .createQueryBuilder('user')
-      .select('user.kycStatus', 'kycStatus')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('user.kycStatus')
-      .getRawMany();
-
-    const byKycStatus: KycStatusCountDto[] = kycCounts.map((k) => ({
-      kycStatus: k.kycStatus,
-      count: parseInt(k.count, 10),
-    }));
+    const byKycStatus: KycStatusCountDto[] = Array.from(kycMap.entries()).map(
+      ([kycStatus, count]) => ({
+        kycStatus,
+        count,
+      }),
+    );
 
     return {
-      totalUsers,
-      newUsersThisMonth: newUsersThisMonthResult,
+      totalUsers: users.length,
+      newUsersThisMonth,
       byRole,
       byStatus,
       byKycStatus,
     };
   }
 
-  /**
-   * Helper: Create an appropriate profile entity for a user based on their role.
-   * Skips if a profile already exists.
-   */
-  async createProfileForUser(user: User, role: UserRole): Promise<void> {
-    switch (role) {
-      case UserRole.INVESTOR: {
-        const existingInvestor = await this.investorProfileRepository.findOne({
-          where: { userId: user.id },
-        });
-        if (!existingInvestor) {
-          const profile = this.investorProfileRepository.create({
-            userId: user.id,
-          });
-          await this.investorProfileRepository.save(profile);
-        }
-        break;
-      }
-      case UserRole.ENTREPRENEUR: {
-        const existingEntrepreneur = await this.entrepreneurProfileRepository.findOne({
-          where: { userId: user.id },
-        });
-        if (!existingEntrepreneur) {
-          const profile = this.entrepreneurProfileRepository.create({
-            userId: user.id,
-            companyName: '',
-            industry: '',
-          });
-          await this.entrepreneurProfileRepository.save(profile);
-        }
-        break;
-      }
-      case UserRole.ASSESSOR: {
-        const existingAssessor = await this.assessorProfileRepository.findOne({
-          where: { userId: user.id },
-        });
-        if (!existingAssessor) {
-          const profile = this.assessorProfileRepository.create({
-            userId: user.id,
-            organizationName: '',
-            yearsOfExperience: 0,
-          });
-          await this.assessorProfileRepository.save(profile);
-        }
-        break;
-      }
-      case UserRole.ADMIN:
-      default:
-        // Admin users don't need a specialized profile
-        break;
-    }
+  async createProfileForUser(user: { id: string; role: UserRole }, role: UserRole): Promise<void> {
+    await createRoleProfile(this.prisma, user.id, role as any);
   }
 }

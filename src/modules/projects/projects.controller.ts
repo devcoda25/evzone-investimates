@@ -20,7 +20,7 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles, UserRole } from '@common/decorators/roles.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
@@ -39,7 +39,7 @@ import { Milestone } from './entities/milestone.entity';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
@@ -259,7 +259,7 @@ export class ProjectsController {
 
 @ApiTags('Milestones')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('milestones')
 export class MilestonesController {
   constructor(private readonly projectsService: ProjectsService) {}

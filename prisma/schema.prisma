@@ -1,0 +1,731 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────────────────────────
+// Enums
+// ───────────────────────────────────────────────
+
+enum UserRole {
+  INVESTOR
+  ENTREPRENEUR
+  ASSESSOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  BLOCKED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ProjectStatus {
+  DRAFT
+  UNDER_REVIEW
+  ACTIVE
+  FUNDED
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectSector {
+  SOLAR
+  WIND
+  HYDRO
+  BIOMASS
+  EV_CHARGING
+  GREEN_HYDROGEN
+  ENERGY_STORAGE
+  OTHER
+}
+
+enum ProjectStage {
+  CONCEPT
+  FEASIBILITY
+  CONSTRUCTION
+  OPERATIONAL
+  EXPANSION
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum InvestmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  INVESTMENT
+  RETURN
+  FEE
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  FLAGGED
+  ESCROW
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CARD
+  CRYPTO
+  MOBILE_MONEY
+}
+
+enum DueDiligenceStatus {
+  ASSIGNED
+  IN_PROGRESS
+  UNDER_REVIEW
+  COMPLETED
+  REJECTED
+}
+
+enum ComplianceAlertType {
+  KYC_ISSUE
+  AML_FLAG
+  DOCUMENT_EXPIRY
+  REGULATORY_CHANGE
+  MANUAL_REVIEW
+}
+
+enum ComplianceAlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplianceAlertStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum DisputeType {
+  PAYMENT
+  PROJECT_DELIVERY
+  FRAUD
+  COMMUNICATION
+  OTHER
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  MEDIATION
+  RESOLVED
+  ESCALATED
+  CLOSED
+}
+
+enum NotificationType {
+  PROJECT_UPDATE
+  INVESTMENT_UPDATE
+  DUE_DILIGENCE
+  COMPLIANCE
+  MESSAGE
+  SYSTEM
+}
+
+enum AssessorType {
+  INDIVIDUAL_CONSULTANT
+  FIRM
+  NGO
+  GOVERNMENT_BODY
+  ACADEMIC
+}
+
+enum AssessorAvailability {
+  AVAILABLE
+  BUSY
+  ON_LEAVE
+}
+
+enum InvestorType {
+  INDIVIDUAL
+  INSTITUTIONAL
+  IMPACT_FUND
+  CORPORATE
+}
+
+enum RiskTolerance {
+  CONSERVATIVE
+  MODERATE
+  AGGRESSIVE
+}
+
+enum EntrepreneurStage {
+  IDEA
+  MVP
+  EARLY_REVENUE
+  GROWTH
+  SCALE
+}
+
+enum MediaStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum MediaPurpose {
+  PROJECT_GALLERY
+  PROJECT_COVER
+  DUE_DILIGENCE_EVIDENCE
+  IMPACT_REPORT_ATTACHMENT
+  USER_AVATAR
+  ORGANIZATION_LOGO
+}
+
+// ───────────────────────────────────────────────
+// Users & Profiles
+// ───────────────────────────────────────────────
+
+model User {
+  id              String      @id @default(uuid()) @db.Uuid
+  email           String      @unique @db.VarChar(255)
+  password        String?     @db.VarChar(255)
+  oidcSub         String?     @unique @db.VarChar(255)
+  oidcIssuer      String?     @db.VarChar(255)
+  firstName       String      @db.VarChar(100)
+  lastName        String      @db.VarChar(100)
+  avatar          String?     @db.VarChar(500)
+  phone           String?     @db.VarChar(20)
+  role            UserRole    @default(INVESTOR)
+  status          UserStatus  @default(PENDING_VERIFICATION)
+  kycStatus       KycStatus   @default(NOT_STARTED)
+  kycSubmittedAt  DateTime?   @db.Timestamp(6)
+  kycVerifiedAt   DateTime?   @db.Timestamp(6)
+  country         String?     @db.VarChar(100)
+  city            String?     @db.VarChar(100)
+  bio             String?     @db.Text
+  riskLevel       String?     @db.VarChar(20)
+  preferences     Json?
+  lastLoginAt     DateTime?   @db.Timestamp(6)
+  loginAttempts   Int         @default(0)
+  lockoutUntil    DateTime?   @db.Timestamp(6)
+  createdAt       DateTime    @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime    @updatedAt @db.Timestamp(6)
+  deletedAt       DateTime?   @db.Timestamp(6)
+
+  investorProfile     InvestorProfile?
+  entrepreneurProfile EntrepreneurProfile?
+  assessorProfile     AssessorProfile?
+  investments         Investment[]
+  projects            Project[]
+  messagesSent        Message[]       @relation("SentMessages")
+  messagesReceived    Message[]       @relation("ReceivedMessages")
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  transactions        Transaction[]
+  auditLogs           AuditLog[]
+  disputesInitiated   Dispute[]
+  documents           Document[]
+
+  @@index([email])
+  @@index([role])
+  @@index([status])
+  @@index([kycStatus])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model InvestorProfile {
+  id                  String          @id @default(uuid()) @db.Uuid
+  userId              String          @unique @db.Uuid
+  investorType        InvestorType    @default(INDIVIDUAL)
+  riskTolerance       RiskTolerance   @default(MODERATE)
+  annualIncome        Decimal?        @db.Decimal(15, 2)
+  netWorth            Decimal?        @db.Decimal(15, 2)
+  accreditationStatus Boolean         @default(false)
+  investmentGoals     String[]
+  preferredSectors    String[]
+  totalInvested       Decimal         @default(0) @db.Decimal(15, 2)
+  totalReturns        Decimal         @default(0) @db.Decimal(15, 2)
+  activeInvestments   Int             @default(0)
+  completedInvestments Int            @default(0)
+  esgPreferences      Json?
+  createdAt           DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime        @updatedAt @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("investor_profiles")
+}
+
+model EntrepreneurProfile {
+  id                  String            @id @default(uuid()) @db.Uuid
+  userId              String            @unique @db.Uuid
+  companyName         String            @db.VarChar(255)
+  companyRegistration String?           @db.VarChar(100)
+  companyWebsite      String?           @db.VarChar(255)
+  industry            String            @db.VarChar(100)
+  foundedYear         Int?
+  teamSize            Int?
+  stage               EntrepreneurStage @default(IDEA)
+  pitchDeck           String?           @db.VarChar(500)
+  previousFunding     Decimal           @default(0) @db.Decimal(15, 2)
+  totalRaised         Decimal           @default(0) @db.Decimal(15, 2)
+  activeCampaigns     Int               @default(0)
+  completedCampaigns  Int               @default(0)
+  createdAt           DateTime          @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime          @updatedAt @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("entrepreneur_profiles")
+}
+
+model AssessorProfile {
+  id                  String              @id @default(uuid()) @db.Uuid
+  userId              String              @unique @db.Uuid
+  organizationName    String              @db.VarChar(255)
+  organizationType    AssessorType        @default(FIRM)
+  specialties         String[]
+  credentials         Json?
+  yearsOfExperience   Int                 @default(0)
+  completedEngagements Int                @default(0)
+  rating              Decimal             @default(0) @db.Decimal(2, 1)
+  availabilityStatus  AssessorAvailability @default(AVAILABLE)
+  hourlyRate          Decimal?            @db.Decimal(10, 2)
+  serviceRegions      String[]
+  bio                 String?             @db.Text
+  licenseExpiry       DateTime?           @db.Timestamp(6)
+  insuranceValid      Boolean             @default(false)
+  tier                String?             @db.VarChar(20)
+  avgTurnaround       Int                 @default(0)
+  createdAt           DateTime            @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime            @updatedAt @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("assessor_profiles")
+}
+
+// ───────────────────────────────────────────────
+// Projects
+// ───────────────────────────────────────────────
+
+model Project {
+  id                  String        @id @default(uuid()) @db.Uuid
+  entrepreneurId      String        @db.Uuid
+  title               String        @db.VarChar(255)
+  slug                String        @unique @db.VarChar(255)
+  subtitle            String?       @db.VarChar(500)
+  description         String        @db.Text
+  longDescription     String?       @db.Text
+  coverImage          String?       @db.VarChar(500)
+  galleryImages       String[]
+  videoUrl            String?       @db.VarChar(500)
+  impactVideo         String?       @db.VarChar(500)
+  story               Json?
+  valuation           Decimal?      @db.Decimal(15, 2)
+  structure           String?       @db.VarChar(50)
+  returnTarget        Decimal?      @db.Decimal(5, 2)
+  coordinates         String?       @db.VarChar(100)
+  locationDescription String?       @db.Text
+  status              ProjectStatus @default(DRAFT)
+  fundingGoal         Decimal       @db.Decimal(15, 2)
+  fundingRaised       Decimal       @default(0) @db.Decimal(15, 2)
+  minInvestment       Decimal       @default(100) @db.Decimal(15, 2)
+  maxInvestment       Decimal?      @db.Decimal(15, 2)
+  currency            String        @default("USD") @db.VarChar(3)
+  equityOffered       Decimal?      @db.Decimal(5, 2)
+  country             String        @db.VarChar(100)
+  city                String?       @db.VarChar(100)
+  region              String?       @db.VarChar(100)
+  sector              ProjectSector
+  stage               ProjectStage
+  impactMetrics       Json?
+  sdgs                Int[]
+  campaignStartDate   DateTime?     @db.Timestamp(6)
+  campaignEndDate     DateTime?     @db.Timestamp(6)
+  projectStartDate    DateTime?     @db.Timestamp(6)
+  projectEndDate      DateTime?     @db.Timestamp(6)
+  teamMembers         Json?
+  risks               Json?
+  faqs                Json?
+  viewCount           Int           @default(0)
+  featured            Boolean       @default(false)
+  featuredOrder       Int?
+  dueDiligenceStatus  String        @default("NOT_STARTED") @db.VarChar(50)
+  dueDiligenceScore   Int?
+  assessorAssignedId  String?       @db.Uuid
+  createdAt           DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt           DateTime      @updatedAt @db.Timestamp(6)
+  deletedAt           DateTime?     @db.Timestamp(6)
+
+  entrepreneur        User                    @relation(fields: [entrepreneurId], references: [id])
+  milestones          Milestone[]
+  investments         Investment[]
+  mediaAssets         MediaAsset[]
+  documents           Document[]
+  dueDiligence        DueDiligenceEngagement?
+  messages            Message[]
+
+  @@index([entrepreneurId])
+  @@index([status])
+  @@index([sector])
+  @@index([country])
+  @@index([deletedAt])
+  @@map("projects")
+}
+
+model Milestone {
+  id              String          @id @default(uuid()) @db.Uuid
+  projectId       String          @db.Uuid
+  title           String          @db.VarChar(255)
+  description     String?         @db.Text
+  order           Int             @default(0)
+  status          MilestoneStatus @default(PENDING)
+  deliverables    Json?
+  fundingTranche  Decimal?        @db.Decimal(15, 2)
+  dueDate         DateTime        @db.Timestamp(6)
+  completedAt     DateTime?       @db.Timestamp(6)
+  verifiedBy      String?         @db.Uuid
+  createdAt       DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime        @updatedAt @db.Timestamp(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([status])
+  @@map("milestones")
+}
+
+// ───────────────────────────────────────────────
+// Investments & Transactions
+// ───────────────────────────────────────────────
+
+model Investment {
+  id                   String            @id @default(uuid()) @db.Uuid
+  investorId           String            @db.Uuid
+  projectId            String            @db.Uuid
+  amount               Decimal           @db.Decimal(15, 2)
+  currency             String            @default("USD") @db.VarChar(3)
+  status               InvestmentStatus  @default(PENDING)
+  paymentMethod        PaymentMethod
+  transactionReference String?           @unique @db.VarChar(255)
+  equityPercentage     Decimal?          @db.Decimal(5, 2)
+  expectedReturns      Decimal?          @db.Decimal(15, 2)
+  actualReturns        Decimal           @default(0) @db.Decimal(15, 2)
+  investedAt           DateTime          @db.Timestamp(6)
+  confirmedAt          DateTime?         @db.Timestamp(6)
+  createdAt            DateTime          @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime          @updatedAt @db.Timestamp(6)
+
+  investor     User          @relation(fields: [investorId], references: [id])
+  project      Project       @relation(fields: [projectId], references: [id])
+  transactions Transaction[]
+
+  @@index([investorId])
+  @@index([projectId])
+  @@index([status])
+  @@map("investments")
+}
+
+model Transaction {
+  id                   String            @id @default(uuid()) @db.Uuid
+  userId               String?           @db.Uuid
+  investmentId         String?           @db.Uuid
+  projectId            String?           @db.Uuid
+  type                 TransactionType
+  amount               Decimal           @db.Decimal(15, 2)
+  currency             String            @db.VarChar(3)
+  status               TransactionStatus @default(PENDING)
+  paymentMethod        PaymentMethod
+  paymentProvider      String?           @db.VarChar(50)
+  providerTransactionId String?          @db.VarChar(255)
+  fromParty            String?           @db.VarChar(255)
+  toParty              String?           @db.VarChar(255)
+  riskScore            Int?
+  jurisdiction         String?           @db.VarChar(100)
+  metadata             Json?
+  processedAt          DateTime?         @db.Timestamp(6)
+  createdAt            DateTime          @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime          @updatedAt @db.Timestamp(6)
+
+  user        User?        @relation(fields: [userId], references: [id])
+  investment  Investment?  @relation(fields: [investmentId], references: [id])
+
+  @@index([userId])
+  @@index([investmentId])
+  @@index([status])
+  @@index([type])
+  @@map("transactions")
+}
+
+// ───────────────────────────────────────────────
+// Due Diligence
+// ───────────────────────────────────────────────
+
+model DueDiligenceEngagement {
+  id                   String                @id @default(uuid()) @db.Uuid
+  projectId            String                @unique @db.Uuid
+  assessorId           String                @db.Uuid @map("providerId")
+  status               DueDiligenceStatus    @default(ASSIGNED)
+  financialAssessment  Json?
+  technicalAssessment  Json?
+  legalAssessment      Json?
+  esgAssessment        Json?
+  marketAssessment     Json?
+  overallScore         Int?
+  riskLevel            String?               @db.VarChar(20)
+  assignedAt           DateTime              @db.Timestamp(6)
+  startedAt            DateTime?             @db.Timestamp(6)
+  submittedAt          DateTime?             @db.Timestamp(6)
+  reviewedAt           DateTime?             @db.Timestamp(6)
+  dueDate              DateTime              @db.Timestamp(6)
+  reportDocuments      Json?
+  notes                String?               @db.Text
+  createdAt            DateTime              @default(now()) @db.Timestamp(6)
+  updatedAt            DateTime              @updatedAt @db.Timestamp(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([assessorId])
+  @@index([status])
+  @@map("due_diligence_engagements")
+}
+
+// ───────────────────────────────────────────────
+// Admin / Compliance
+// ───────────────────────────────────────────────
+
+model ComplianceAlert {
+  id               String                  @id @default(uuid()) @db.Uuid
+  type             ComplianceAlertType
+  severity         ComplianceAlertSeverity
+  entityType       String                  @db.VarChar(50)
+  entityId         String                  @db.Uuid
+  title            String                  @db.VarChar(255)
+  description      String                  @db.Text
+  status           ComplianceAlertStatus   @default(OPEN)
+  assignedTo       String?                 @db.Uuid
+  resolvedBy       String?                 @db.Uuid
+  resolvedAt       DateTime?               @db.Timestamp(6)
+  resolutionNotes  String?                 @db.Text
+  createdAt        DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime                @updatedAt @db.Timestamp(6)
+
+  @@index([status])
+  @@index([severity])
+  @@index([entityId])
+  @@map("compliance_alerts")
+}
+
+model Dispute {
+  id               String        @id @default(uuid()) @db.Uuid
+  initiatorId      String        @db.Uuid
+  respondentId     String?       @db.Uuid
+  projectId        String?       @db.Uuid
+  investmentId     String?       @db.Uuid
+  type             DisputeType
+  title            String        @db.VarChar(255)
+  description      String        @db.Text
+  evidence         Json?
+  status           DisputeStatus @default(OPEN)
+  priority         String?       @db.VarChar(20)
+  financialImpact  Decimal?      @db.Decimal(15, 2)
+  resolution       String?       @db.Text
+  resolvedBy       String?       @db.Uuid
+  resolvedAt       DateTime?     @db.Timestamp(6)
+  createdAt        DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt        DateTime      @updatedAt @db.Timestamp(6)
+
+  initiator User @relation(fields: [initiatorId], references: [id])
+
+  @@index([status])
+  @@index([initiatorId])
+  @@map("disputes")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String?  @db.VarChar(50)
+  entityId   String?  @db.Uuid
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?  @db.VarChar(45)
+  userAgent  String?  @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now()) @db.Timestamp(6)
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────────────────────────────
+// Auth
+// ───────────────────────────────────────────────
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  token     String    @db.VarChar(255)
+  expiresAt DateTime  @db.Timestamp(6)
+  revokedAt DateTime? @db.Timestamp(6)
+  replacedBy String?  @db.VarChar(255)
+  ipAddress String?   @db.VarChar(45)
+  userAgent String?   @db.Text
+  createdAt DateTime  @default(now()) @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ───────────────────────────────────────────────
+// Messaging
+// ───────────────────────────────────────────────
+
+model Message {
+  id          String    @id @default(uuid()) @db.Uuid
+  senderId    String    @db.Uuid
+  recipientId String    @db.Uuid
+  projectId   String?   @db.Uuid
+  content     String    @db.Text
+  attachments Json?
+  read        Boolean   @default(false)
+  readAt      DateTime? @db.Timestamp(6)
+  createdAt   DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime  @updatedAt @db.Timestamp(6)
+  deletedAt   DateTime? @db.Timestamp(6)
+
+  sender    User    @relation("SentMessages", fields: [senderId], references: [id])
+  recipient User    @relation("ReceivedMessages", fields: [recipientId], references: [id])
+  project   Project? @relation(fields: [projectId], references: [id])
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([projectId])
+  @@index([read])
+  @@map("messages")
+}
+
+// ───────────────────────────────────────────────
+// Notifications
+// ───────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @db.Uuid
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  data      Json?
+  read      Boolean          @default(false)
+  readAt    DateTime?        @db.Timestamp(6)
+  actionUrl String?          @db.VarChar(500)
+  createdAt DateTime         @default(now()) @db.Timestamp(6)
+  updatedAt DateTime         @updatedAt @db.Timestamp(6)
+  deletedAt DateTime?        @db.Timestamp(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([type])
+  @@map("notifications")
+}
+
+// ───────────────────────────────────────────────
+// Documents
+// ───────────────────────────────────────────────
+
+model Document {
+  id           String    @id @default(uuid()) @db.Uuid
+  originalName String    @db.VarChar(255)
+  fileName     String    @db.VarChar(255)
+  mimeType     String    @db.VarChar(100)
+  size         Int
+  path         String    @db.VarChar(500)
+  url          String    @db.VarChar(500)
+  uploadedBy   String    @db.Uuid
+  projectId    String?   @db.Uuid
+  category     String?   @db.VarChar(50)
+  createdAt    DateTime  @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime  @updatedAt @db.Timestamp(6)
+  deletedAt    DateTime? @db.Timestamp(6)
+
+  user    User     @relation(fields: [uploadedBy], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([uploadedBy])
+  @@index([projectId])
+  @@map("documents")
+}
+
+// ───────────────────────────────────────────────
+// Media (for presigned upload flow)
+// ───────────────────────────────────────────────
+
+model MediaAsset {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String?      @db.Uuid
+  ownerUserId String       @db.Uuid
+  bucket      String
+  objectKey   String
+  publicUrl   String?      @db.VarChar(500)
+  contentType String       @db.VarChar(100)
+  sizeBytes   Int?
+  checksum    String?      @db.VarChar(64)
+  status      MediaStatus  @default(PENDING_UPLOAD)
+  purpose     MediaPurpose
+  width       Int?
+  height      Int?
+  altText     String?      @db.VarChar(255)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime     @updatedAt @db.Timestamp(6)
+
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@index([status])
+  @@index([purpose])
+  @@map("media_assets")
+}

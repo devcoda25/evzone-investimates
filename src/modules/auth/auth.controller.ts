@@ -259,7 +259,7 @@ export class AuthController {
   @ApiNotFoundResponse({
     description: 'User not found',
   })
-  async getMe(@CurrentUser('id') userId: string): Promise<User> {
+  async getMe(@CurrentUser('id') userId: string): Promise<any> {
     return this.authService.getMe(userId);
   }
 }

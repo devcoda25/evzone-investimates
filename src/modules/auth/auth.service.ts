@@ -6,15 +6,13 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { User } from '@modules/users/entities/user.entity';
-import { RefreshToken } from '@modules/auth/entities/refresh-token.entity';
+import { PrismaService } from '@database/prisma.service';
 import { MailService } from '@modules/mail/mail.service';
+import { createRoleProfile, userProfileInclude } from '@modules/users/user.prisma';
 import {
   UserRole,
   UserStatus,
@@ -34,10 +32,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokenRepository: Repository<RefreshToken>,
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly mailService: MailService,
@@ -48,9 +43,8 @@ export class AuthService {
   // ───────────────────────────────────────────────
 
   async register(dto: RegisterDto): Promise<TokenResponseDto> {
-    const existing = await this.userRepository.findOne({
+    const existing = await this.prisma.user.findFirst({
       where: { email: dto.email.toLowerCase() },
-      withDeleted: true,
     });
     if (existing) {
       throw new ConflictException('Email already in use');
@@ -58,36 +52,36 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
 
-    const user = this.userRepository.create({
-      email: dto.email.toLowerCase(),
-      password: hashedPassword,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      role: dto.role,
-      country: dto.country,
-      phone: dto.phone,
-      status: UserStatus.PENDING_VERIFICATION,
-      kycStatus: KycStatus.NOT_STARTED,
+    const user = await this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase(),
+        password: hashedPassword,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        role: dto.role as UserRole,
+        country: dto.country,
+        phone: dto.phone,
+        status: UserStatus.PENDING_VERIFICATION,
+        kycStatus: KycStatus.NOT_STARTED,
+      },
     });
 
-    const savedUser = await this.userRepository.save(user);
-
     // Create role-specific profile
-    await this.createRoleProfile(savedUser.id, savedUser.role);
+    await this.createRoleProfile(user.id, user.role as UserRole);
 
     // Generate tokens
-    const tokens = await this.generateTokens(savedUser);
+    const tokens = await this.generateTokens(user);
 
     // Send welcome email
     try {
-      await this.mailService.sendWelcome(savedUser.email, savedUser.firstName, savedUser.role);
+      await this.mailService.sendWelcome(user.email, user.firstName, user.role);
     } catch (err) {
-      this.logger.error(`Failed to send welcome email: ${err.message}`);
+      this.logger.error(`Failed to send welcome email: ${(err as Error).message}`);
     }
 
-    this.logger.log(`User registered: ${savedUser.email} (${savedUser.role})`);
+    this.logger.log(`User registered: ${user.email} (${user.role})`);
 
-    return this.buildTokenResponse(savedUser, tokens);
+    return this.buildTokenResponse(user, tokens);
   }
 
   // ───────────────────────────────────────────────
@@ -95,9 +89,9 @@ export class AuthService {
   // ───────────────────────────────────────────────
 
   async login(dto: LoginDto, ipAddress?: string, userAgent?: string): Promise<TokenResponseDto> {
-    const user = await this.userRepository.findOne({
-      where: { email: dto.email.toLowerCase() },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
+    const user = await this.prisma.user.findFirst({
+      where: { email: dto.email.toLowerCase(), deletedAt: null },
+      include: userProfileInclude,
     });
 
     if (!user || !user.password) {
@@ -122,23 +116,29 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.password);
     if (!valid) {
       // Increment login attempts
-      user.loginAttempts = (user.loginAttempts || 0) + 1;
-      if (user.loginAttempts >= 5) {
+      const loginAttempts = (user.loginAttempts || 0) + 1;
+      let lockoutUntil: Date | null = user.lockoutUntil;
+      if (loginAttempts >= 5) {
         const lockoutDuration = 15 * 60 * 1000; // 15 minutes
-        user.lockoutUntil = new Date(Date.now() + lockoutDuration);
+        lockoutUntil = new Date(Date.now() + lockoutDuration);
         this.logger.warn(`Account locked due to failed attempts: ${user.email}`);
       }
-      await this.userRepository.save(user);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { loginAttempts, lockoutUntil },
+      });
       throw new UnauthorizedException('Invalid email or password');
     }
 
     // Reset login attempts on success
-    if (user.loginAttempts > 0 || user.lockoutUntil) {
-      user.loginAttempts = 0;
-      user.lockoutUntil = null as any;
-    }
-    user.lastLoginAt = new Date();
-    await this.userRepository.save(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        loginAttempts: 0,
+        lockoutUntil: null,
+        lastLoginAt: new Date(),
+      },
+    });
 
     const tokens = await this.generateTokens(user, ipAddress, userAgent);
 
@@ -152,9 +152,9 @@ export class AuthService {
   // ───────────────────────────────────────────────
 
   async refresh(userId: string, tokenId: string): Promise<TokenResponseDto> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: userProfileInclude,
     });
 
     if (!user) {
@@ -166,8 +166,9 @@ export class AuthService {
     }
 
     // Revoke the old refresh token
-    await this.refreshTokenRepository.update(tokenId, {
-      revokedAt: new Date(),
+    await this.prisma.refreshToken.update({
+      where: { id: tokenId },
+      data: { revokedAt: new Date() },
     });
 
     // Generate new tokens
@@ -182,30 +183,41 @@ export class AuthService {
   // Logout
   // ───────────────────────────────────────────────
 
-  async logout(userId: string, refreshToken?: string): Promise<void> {
-    if (refreshToken) {
-      // Find and revoke the refresh token by matching its hash
-      const tokens = await this.refreshTokenRepository.find({
-        where: { userId, revokedAt: null as any },
-      });
-      for (const token of tokens) {
-        const valid = await bcrypt.compare(refreshToken, token.token);
-        if (valid) {
-          await this.refreshTokenRepository.update(token.id, {
-            revokedAt: new Date(),
+  async logout(userId: string, refreshTokenOrId?: string): Promise<void> {
+    if (refreshTokenOrId) {
+      const revokedAt = new Date();
+
+      if (refreshTokenOrId.includes('.')) {
+        try {
+          const payload = this.jwtService.verify<{ jti: string }>(refreshTokenOrId, {
+            secret: this.configService.get<string>('jwt.refreshSecret'),
+            issuer: this.configService.get<string>('jwt.issuer'),
+            audience: this.configService.get<string>('jwt.audience'),
           });
-          break;
+
+          await this.prisma.refreshToken.updateMany({
+            where: { id: payload.jti, userId, revokedAt: null },
+            data: { revokedAt },
+          });
+        } catch {
+          // Ignore invalid refresh token bodies during logout.
         }
+      } else {
+        await this.prisma.refreshToken.updateMany({
+          where: { id: refreshTokenOrId, userId, revokedAt: null },
+          data: { revokedAt },
+        });
       }
     }
+
     this.logger.log(`User logged out: ${userId}`);
   }
 
   async logoutAll(userId: string): Promise<void> {
-    await this.refreshTokenRepository.update(
-      { userId, revokedAt: null as any },
-      { revokedAt: new Date() },
-    );
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
     this.logger.log(`User logged out from all devices: ${userId}`);
   }
 
@@ -214,7 +226,9 @@ export class AuthService {
   // ───────────────────────────────────────────────
 
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+    });
     if (!user || !user.password) {
       throw new UnauthorizedException('User not found');
     }
@@ -225,8 +239,10 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.newPassword, 12);
-    user.password = hashedPassword;
-    await this.userRepository.save(user);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
 
     // Revoke all refresh tokens for security
     await this.logoutAll(userId);
@@ -234,9 +250,9 @@ export class AuthService {
     this.logger.log(`Password changed for user: ${user.email}`);
   }
 
-  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string; token?: string }> {
-    const user = await this.userRepository.findOne({
-      where: { email: dto.email.toLowerCase() },
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: { email: dto.email.toLowerCase(), deletedAt: null },
     });
 
     if (!user) {
@@ -250,12 +266,14 @@ export class AuthService {
     const resetToken = randomBytes(32).toString('hex');
     const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Store in user preferences (in production, send via email)
-    const preferences = user.preferences || {};
+    // Store in user preferences
+    const preferences = (user.preferences as Record<string, any>) || {};
     preferences.passwordResetToken = await bcrypt.hash(resetToken, 10);
     preferences.passwordResetExpires = resetExpires.toISOString();
-    user.preferences = preferences;
-    await this.userRepository.save(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { preferences },
+    });
 
     this.logger.log(`Password reset requested for: ${user.email}`);
 
@@ -263,7 +281,7 @@ export class AuthService {
     try {
       await this.mailService.sendPasswordReset(user.email, resetToken, user.firstName);
     } catch (err) {
-      this.logger.error(`Failed to send password reset email: ${err.message}`);
+      this.logger.error(`Failed to send password reset email: ${(err as Error).message}`);
     }
 
     return {
@@ -273,13 +291,13 @@ export class AuthService {
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
     // Find user with a valid reset token
-    const users = await this.userRepository.find({
-      where: {},
+    const users = await this.prisma.user.findMany({
+      where: { deletedAt: null },
     });
 
-    let matchedUser: User | null = null;
+    let matchedUser: (typeof users)[0] | null = null;
     for (const user of users) {
-      const prefs = user.preferences || {};
+      const prefs = (user.preferences as Record<string, any>) || {};
       if (
         prefs.passwordResetToken &&
         prefs.passwordResetExpires &&
@@ -298,15 +316,16 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.newPassword, 12);
-    matchedUser.password = hashedPassword;
 
     // Clear reset token
-    const preferences = matchedUser.preferences || {};
+    const preferences = (matchedUser.preferences as Record<string, any>) || {};
     delete preferences.passwordResetToken;
     delete preferences.passwordResetExpires;
-    matchedUser.preferences = preferences;
 
-    await this.userRepository.save(matchedUser);
+    await this.prisma.user.update({
+      where: { id: matchedUser.id },
+      data: { password: hashedPassword, preferences },
+    });
 
     // Revoke all refresh tokens
     await this.logoutAll(matchedUser.id);
@@ -318,37 +337,23 @@ export class AuthService {
   // Get Current User (OIDC)
   // ───────────────────────────────────────────────
 
-  async getMe(userId: string): Promise<User> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
-      select: [
-        'id',
-        'email',
-        'firstName',
-        'lastName',
-        'avatar',
-        'phone',
-        'role',
-        'status',
-        'kycStatus',
-        'country',
-        'city',
-        'bio',
-        'preferences',
-        'lastLoginAt',
-        'createdAt',
-        'updatedAt',
-        'oidcSub',
-        'oidcIssuer',
-      ],
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: userProfileInclude,
+      omit: {
+        password: true,
+      },
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    return {
+      ...user,
+      fullName: `${user.firstName} ${user.lastName}`,
+    };
   }
 
   // ───────────────────────────────────────────────
@@ -356,7 +361,7 @@ export class AuthService {
   // ───────────────────────────────────────────────
 
   private async generateTokens(
-    user: User,
+    user: { id: string; email: string; role: string },
     ipAddress?: string,
     userAgent?: string,
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number; tokenId: string }> {
@@ -401,13 +406,15 @@ export class AuthService {
     const refreshTokenHash = await bcrypt.hash(refreshToken, 10);
     const refreshExpiry = this.parseDuration(refreshExpiration);
 
-    await this.refreshTokenRepository.save({
-      id: tokenId,
-      userId: user.id,
-      token: refreshTokenHash,
-      expiresAt: new Date(Date.now() + refreshExpiry),
-      ipAddress,
-      userAgent,
+    await this.prisma.refreshToken.create({
+      data: {
+        id: tokenId,
+        userId: user.id,
+        token: refreshTokenHash,
+        expiresAt: new Date(Date.now() + refreshExpiry),
+        ipAddress,
+        userAgent,
+      },
     });
 
     const expiresInSeconds = Math.floor(this.parseDuration(accessExpiration) / 1000);
@@ -416,7 +423,7 @@ export class AuthService {
   }
 
   private buildTokenResponse(
-    user: User,
+    user: any,
     tokens: { accessToken: string; refreshToken: string; expiresIn: number },
   ): TokenResponseDto {
     return {
@@ -428,7 +435,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        fullName: user.fullName,
+        fullName: `${user.firstName} ${user.lastName}`,
         role: user.role,
         status: user.status,
         kycStatus: user.kycStatus,
@@ -438,32 +445,6 @@ export class AuthService {
         createdAt: user.createdAt,
       },
     };
-  }
-
-  private async createRoleProfile(userId: string, role: UserRole): Promise<void> {
-    const { InvestorProfile } = await import('@modules/users/entities/investor-profile.entity');
-    const { EntrepreneurProfile } = await import('@modules/users/entities/entrepreneur-profile.entity');
-    const { AssessorProfile } = await import('@modules/users/entities/assessor-profile.entity');
-
-    switch (role) {
-      case UserRole.INVESTOR: {
-        const repo = this.userRepository.manager.getRepository(InvestorProfile);
-        await repo.save(repo.create({ userId }));
-        break;
-      }
-      case UserRole.ENTREPRENEUR: {
-        const repo = this.userRepository.manager.getRepository(EntrepreneurProfile);
-        await repo.save(repo.create({ userId, companyName: 'My Company', industry: 'Other' }));
-        break;
-      }
-      case UserRole.ASSESSOR: {
-        const repo = this.userRepository.manager.getRepository(AssessorProfile);
-        await repo.save(repo.create({ userId, organizationName: 'My Organization', yearsOfExperience: 0 }));
-        break;
-      }
-      default:
-        break;
-    }
   }
 
   private parseDuration(duration: string): number {

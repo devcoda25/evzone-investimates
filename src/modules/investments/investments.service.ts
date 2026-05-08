@@ -5,11 +5,15 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Brackets } from 'typeorm';
-import { Investment } from './entities/investment.entity';
-import { Transaction } from './entities/transaction.entity';
-import { Project } from '@modules/projects/entities/project.entity';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '@database/prisma.service';
+import {
+  buildPaginationMeta,
+  getSortField,
+  getSortOrder,
+  normalizePrisma,
+  withFundingProgress,
+} from '@database/prisma.helpers';
 import {
   InvestmentStatus,
   TransactionType,
@@ -33,398 +37,207 @@ import {
 } from './dto';
 import { PaginatedResponse } from '@common/dto/pagination.dto';
 
+const INVESTMENT_SORT_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'investedAt',
+  'amount',
+  'status',
+  'confirmedAt',
+  'transactionReference',
+] as const;
+
+const TRANSACTION_SORT_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'processedAt',
+  'amount',
+  'status',
+  'type',
+  'riskScore',
+  'jurisdiction',
+  'paymentProvider',
+] as const;
+
+const investmentInclude = {
+  project: true,
+  investor: true,
+} satisfies Prisma.InvestmentInclude;
+
+const transactionInclude = {
+  user: true,
+  investment: {
+    include: {
+      project: true,
+    },
+  },
+} satisfies Prisma.TransactionInclude;
+
 @Injectable()
 export class InvestmentsService {
   private readonly logger = new Logger(InvestmentsService.name);
 
-  constructor(
-    @InjectRepository(Investment)
-    private readonly investmentRepo: Repository<Investment>,
-    @InjectRepository(Transaction)
-    private readonly transactionRepo: Repository<Transaction>,
-    @InjectRepository(Project)
-    private readonly projectRepo: Repository<Project>,
-    private readonly dataSource: DataSource,
-  ) {}
-
-  // ───────────────────────────────────────────────
-  // Investment Methods
-  // ───────────────────────────────────────────────
+  constructor(private readonly prisma: PrismaService) {}
 
   async invest(
     investorId: string,
     projectId: string,
     dto: CreateInvestmentDto,
-  ): Promise<Investment> {
-    const project = await this.projectRepo.findOne({
-      where: { id: projectId },
+  ): Promise<any> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
     });
 
     if (!project) {
       throw new NotFoundException('Project not found');
     }
 
-    if (project.status !== ProjectStatus.ACTIVE && project.status !== ProjectStatus.FUNDED) {
-      throw new BadRequestException(
-        'Project is not open for investments',
-      );
+    if (![ProjectStatus.ACTIVE, ProjectStatus.FUNDED].includes(project.status as any)) {
+      throw new BadRequestException('Project is not open for investments');
     }
 
-    // Validate min/max investment
-    if (dto.amount < project.minInvestment) {
+    if (dto.amount < Number(project.minInvestment)) {
       throw new BadRequestException(
         `Minimum investment amount is ${project.minInvestment} ${project.currency}`,
       );
     }
-    if (project.maxInvestment && dto.amount > project.maxInvestment) {
+    if (project.maxInvestment && dto.amount > Number(project.maxInvestment)) {
       throw new BadRequestException(
         `Maximum investment amount is ${project.maxInvestment} ${project.currency}`,
       );
     }
 
-    // Check if funding goal would be exceeded
-    const newFundingRaised = this.addDecimals(project.fundingRaised, dto.amount);
-    if (newFundingRaised > project.fundingGoal * 1.1) {
-      throw new BadRequestException(
-        'Investment would exceed project funding goal by more than 10%',
-      );
+    const newFundingRaised = this.addDecimals(Number(project.fundingRaised), dto.amount);
+    if (newFundingRaised > Number(project.fundingGoal) * 1.1) {
+      throw new BadRequestException('Investment would exceed project funding goal by more than 10%');
     }
 
-    // Use transaction to ensure atomicity
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // Create investment
-      const investment = this.investmentRepo.create({
-        investorId,
-        projectId,
-        amount: dto.amount,
-        currency: dto.currency || 'USD',
-        status: InvestmentStatus.PENDING,
-        paymentMethod: dto.paymentMethod,
-        investedAt: new Date(),
+    const investment = await this.prisma.$transaction(async (tx) => {
+      const createdInvestment = await tx.investment.create({
+        data: {
+          investorId,
+          projectId,
+          amount: dto.amount,
+          currency: dto.currency || 'USD',
+          status: InvestmentStatus.PENDING as any,
+          paymentMethod: dto.paymentMethod as any,
+          investedAt: new Date(),
+        },
+        include: investmentInclude,
       });
 
-      const savedInvestment = await queryRunner.manager.save(investment);
-
-      // Create transaction record
-      const transaction = this.transactionRepo.create({
-        userId: investorId,
-        investmentId: savedInvestment.id,
-        projectId,
-        type: TransactionType.INVESTMENT,
-        amount: dto.amount,
-        currency: dto.currency || 'USD',
-        status: TransactionStatus.PENDING,
-        paymentMethod: dto.paymentMethod,
+      await tx.transaction.create({
+        data: {
+          userId: investorId,
+          investmentId: createdInvestment.id,
+          projectId,
+          type: TransactionType.INVESTMENT as any,
+          amount: dto.amount,
+          currency: dto.currency || 'USD',
+          status: TransactionStatus.PENDING as any,
+          paymentMethod: dto.paymentMethod as any,
+        },
       });
 
-      await queryRunner.manager.save(transaction);
+      await tx.project.update({
+        where: { id: projectId },
+        data: {
+          fundingRaised: { increment: dto.amount },
+          ...(newFundingRaised >= Number(project.fundingGoal)
+            ? { status: ProjectStatus.FUNDED as any }
+            : {}),
+        },
+      });
 
-      // Update project funding raised using raw SQL for decimal precision
-      await queryRunner.manager.increment(
-        Project,
-        { id: projectId },
-        'fundingRaised',
-        dto.amount,
-      );
+      return createdInvestment;
+    });
 
-      // If project reached funding goal, update status
-      if (newFundingRaised >= project.fundingGoal) {
-        await queryRunner.manager.update(Project, { id: projectId }, {
-          status: ProjectStatus.FUNDED,
-        });
-      }
+    this.logger.log(`Investment created: ${investment.id} for project ${projectId} by investor ${investorId}`);
 
-      await queryRunner.commitTransaction();
-
-      this.logger.log(
-        `Investment created: ${savedInvestment.id} for project ${projectId} by investor ${investorId}`,
-      );
-
-      return savedInvestment;
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `Failed to create investment: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+    return this.normalizeInvestment(investment);
   }
 
   async findByInvestor(
     investorId: string,
     filter: InvestmentFilterDto,
-  ): Promise<PaginatedResponse<Investment>> {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      projectId,
-      startDate,
-      endDate,
-      minAmount,
-      maxAmount,
-      search,
-      sortBy = 'createdAt',
-      sortOrder = 'DESC',
-    } = filter;
-
-    const skip = (page - 1) * limit;
-
-    const query = this.investmentRepo
-      .createQueryBuilder('investment')
-      .leftJoinAndSelect('investment.project', 'project')
-      .where('investment.investorId = :investorId', { investorId });
-
-    if (status) {
-      query.andWhere('investment.status = :status', { status });
-    }
-
-    if (projectId) {
-      query.andWhere('investment.projectId = :projectId', { projectId });
-    }
-
-    if (startDate && endDate) {
-      query.andWhere('investment.investedAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
-      });
-    } else if (startDate) {
-      query.andWhere('investment.investedAt >= :startDate', { startDate });
-    } else if (endDate) {
-      query.andWhere('investment.investedAt <= :endDate', { endDate });
-    }
-
-    if (minAmount !== undefined) {
-      query.andWhere('investment.amount >= :minAmount', { minAmount });
-    }
-
-    if (maxAmount !== undefined) {
-      query.andWhere('investment.amount <= :maxAmount', { maxAmount });
-    }
-
-    if (search) {
-      query.andWhere(
-        new Brackets((qb) => {
-          qb.where('project.title ILIKE :search', { search: `%${search}%` })
-            .orWhere('investment.transactionReference ILIKE :search', {
-              search: `%${search}%`,
-            });
-        }),
-      );
-    }
-
-    query.orderBy(`investment.${sortBy}`, sortOrder);
-
-    const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
-
-    return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1,
-      },
-    };
+  ): Promise<PaginatedResponse<any>> {
+    return this.queryInvestments({ ...filter, investorId }, false);
   }
 
   async findAllInvestments(
     filter: InvestmentFilterDto,
-  ): Promise<PaginatedResponse<Investment>> {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      projectId,
-      startDate,
-      endDate,
-      minAmount,
-      maxAmount,
-      search,
-      sortBy = 'createdAt',
-      sortOrder = 'DESC',
-    } = filter;
-
-    const skip = (page - 1) * limit;
-
-    const query = this.investmentRepo
-      .createQueryBuilder('investment')
-      .leftJoinAndSelect('investment.project', 'project')
-      .leftJoinAndSelect('investment.investor', 'investor');
-
-    if (status) {
-      query.andWhere('investment.status = :status', { status });
-    }
-
-    if (projectId) {
-      query.andWhere('investment.projectId = :projectId', { projectId });
-    }
-
-    if (startDate && endDate) {
-      query.andWhere('investment.investedAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
-      });
-    } else if (startDate) {
-      query.andWhere('investment.investedAt >= :startDate', { startDate });
-    } else if (endDate) {
-      query.andWhere('investment.investedAt <= :endDate', { endDate });
-    }
-
-    if (minAmount !== undefined) {
-      query.andWhere('investment.amount >= :minAmount', { minAmount });
-    }
-
-    if (maxAmount !== undefined) {
-      query.andWhere('investment.amount <= :maxAmount', { maxAmount });
-    }
-
-    if (search) {
-      query.andWhere(
-        new Brackets((qb) => {
-          qb.where('project.title ILIKE :search', { search: `%${search}%` })
-            .orWhere('investment.transactionReference ILIKE :search', {
-              search: `%${search}%`,
-            });
-        }),
-      );
-    }
-
-    query.orderBy(`investment.${sortBy}`, sortOrder);
-
-    const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
-
-    return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1,
-      },
-    };
+  ): Promise<PaginatedResponse<any>> {
+    return this.queryInvestments(filter, true);
   }
 
   async findByProject(
     projectId: string,
     filter: InvestmentFilterDto,
-  ): Promise<PaginatedResponse<Investment>> {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      startDate,
-      endDate,
-      minAmount,
-      maxAmount,
-      sortBy = 'createdAt',
-      sortOrder = 'DESC',
-    } = filter;
+  ): Promise<PaginatedResponse<any>> {
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const sortBy = getSortField(filter.sortBy, INVESTMENT_SORT_FIELDS, 'createdAt');
+    const sortOrder = getSortOrder(filter.sortOrder);
 
-    const skip = (page - 1) * limit;
+    const where: Prisma.InvestmentWhereInput = {
+      projectId,
+      status: filter.status as any,
+      amount: this.buildAmountFilter(filter.minAmount, filter.maxAmount),
+      investedAt: this.buildDateFilter(filter.startDate, filter.endDate),
+    };
 
-    const query = this.investmentRepo
-      .createQueryBuilder('investment')
-      .leftJoinAndSelect('investment.investor', 'investor')
-      .where('investment.projectId = :projectId', { projectId });
-
-    if (status) {
-      query.andWhere('investment.status = :status', { status });
-    }
-
-    if (startDate && endDate) {
-      query.andWhere('investment.investedAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
-      });
-    } else if (startDate) {
-      query.andWhere('investment.investedAt >= :startDate', { startDate });
-    } else if (endDate) {
-      query.andWhere('investment.investedAt <= :endDate', { endDate });
-    }
-
-    if (minAmount !== undefined) {
-      query.andWhere('investment.amount >= :minAmount', { minAmount });
-    }
-
-    if (maxAmount !== undefined) {
-      query.andWhere('investment.amount <= :maxAmount', { maxAmount });
-    }
-
-    query.orderBy(`investment.${sortBy}`, sortOrder);
-
-    const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
+    const [investments, total] = await Promise.all([
+      this.prisma.investment.findMany({
+        where,
+        include: investmentInclude,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+      }),
+      this.prisma.investment.count({ where }),
+    ]);
 
     return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1,
-      },
+      data: investments.map((investment) => this.normalizeInvestment(investment)),
+      meta: buildPaginationMeta(page, limit, total),
     };
   }
 
-  async findById(id: string): Promise<Investment> {
-    const investment = await this.investmentRepo.findOne({
+  async findById(id: string): Promise<any> {
+    const investment = await this.prisma.investment.findUnique({
       where: { id },
-      relations: ['project', 'investor'],
+      include: investmentInclude,
     });
 
     if (!investment) {
       throw new NotFoundException('Investment not found');
     }
 
-    return investment;
+    return this.normalizeInvestment(investment);
   }
 
-  async update(id: string, dto: UpdateInvestmentDto): Promise<Investment> {
-    const investment = await this.findById(id);
+  async update(id: string, dto: UpdateInvestmentDto): Promise<any> {
+    await this.findById(id);
 
-    if (dto.status) {
-      investment.status = dto.status;
-      if (dto.status === InvestmentStatus.CONFIRMED) {
-        investment.confirmedAt = new Date();
-      }
-    }
+    const updated = await this.prisma.investment.update({
+      where: { id },
+      data: {
+        status: dto.status as any,
+        transactionReference: dto.transactionReference,
+        equityPercentage: dto.equityPercentage,
+        expectedReturns: dto.expectedReturns,
+        actualReturns: dto.actualReturns,
+        ...(dto.status === InvestmentStatus.CONFIRMED ? { confirmedAt: new Date() } : {}),
+      },
+      include: investmentInclude,
+    });
 
-    if (dto.transactionReference !== undefined) {
-      investment.transactionReference = dto.transactionReference;
-    }
-
-    if (dto.equityPercentage !== undefined) {
-      investment.equityPercentage = dto.equityPercentage;
-    }
-
-    if (dto.expectedReturns !== undefined) {
-      investment.expectedReturns = dto.expectedReturns;
-    }
-
-    if (dto.actualReturns !== undefined) {
-      investment.actualReturns = dto.actualReturns;
-    }
-
-    return this.investmentRepo.save(investment);
+    return this.normalizeInvestment(updated);
   }
 
-  async cancel(id: string, userId: string): Promise<Investment> {
+  async cancel(id: string, userId: string): Promise<any> {
     const investment = await this.findById(id);
 
-    // Only allow canceling own investments
     if (investment.investorId !== userId) {
       throw new ForbiddenException('You can only cancel your own investments');
     }
@@ -435,54 +248,43 @@ export class InvestmentsService {
       );
     }
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      // Update investment status
-      investment.status = InvestmentStatus.CANCELLED;
-      await queryRunner.manager.save(investment);
-
-      // Create refund transaction
-      const refundTransaction = this.transactionRepo.create({
-        userId: investment.investorId,
-        investmentId: investment.id,
-        projectId: investment.projectId,
-        type: TransactionType.REFUND,
-        amount: investment.amount,
-        currency: investment.currency,
-        status: TransactionStatus.PENDING,
-        paymentMethod: investment.paymentMethod,
-        metadata: { reason: 'Investment cancelled by investor' },
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      const updatedInvestment = await tx.investment.update({
+        where: { id },
+        data: { status: InvestmentStatus.CANCELLED as any },
+        include: investmentInclude,
       });
-      await queryRunner.manager.save(refundTransaction);
 
-      // Decrement project funding
-      await queryRunner.manager.decrement(
-        Project,
-        { id: investment.projectId },
-        'fundingRaised',
-        investment.amount,
-      );
+      await tx.transaction.create({
+        data: {
+          userId: investment.investorId,
+          investmentId: investment.id,
+          projectId: investment.projectId,
+          type: TransactionType.REFUND as any,
+          amount: Number(investment.amount),
+          currency: investment.currency,
+          status: TransactionStatus.PENDING as any,
+          paymentMethod: investment.paymentMethod as any,
+          metadata: { reason: 'Investment cancelled by investor' },
+        },
+      });
 
-      await queryRunner.commitTransaction();
+      await tx.project.update({
+        where: { id: investment.projectId },
+        data: {
+          fundingRaised: { decrement: Number(investment.amount) },
+        },
+      });
 
-      this.logger.log(`Investment cancelled: ${id}`);
-      return investment;
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      this.logger.error(
-        `Failed to cancel investment: ${error.message}`,
-        error.stack,
-      );
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
+      return updatedInvestment;
+    });
+
+    this.logger.log(`Investment cancelled: ${id}`);
+
+    return this.normalizeInvestment(cancelled);
   }
 
-  async confirm(id: string): Promise<Investment> {
+  async confirm(id: string): Promise<any> {
     const investment = await this.findById(id);
 
     if (investment.status !== InvestmentStatus.PENDING) {
@@ -491,51 +293,64 @@ export class InvestmentsService {
       );
     }
 
-    investment.status = InvestmentStatus.CONFIRMED;
-    investment.confirmedAt = new Date();
+    const confirmed = await this.prisma.$transaction(async (tx) => {
+      const updatedInvestment = await tx.investment.update({
+        where: { id },
+        data: {
+          status: InvestmentStatus.CONFIRMED as any,
+          confirmedAt: new Date(),
+        },
+        include: investmentInclude,
+      });
 
-    const saved = await this.investmentRepo.save(investment);
+      await tx.transaction.updateMany({
+        where: {
+          investmentId: id,
+          type: TransactionType.INVESTMENT as any,
+        },
+        data: {
+          status: TransactionStatus.COMPLETED as any,
+          processedAt: new Date(),
+        },
+      });
 
-    // Update associated transaction
-    await this.transactionRepo.update(
-      { investmentId: id, type: TransactionType.INVESTMENT },
-      { status: TransactionStatus.COMPLETED, processedAt: new Date() },
-    );
-
-    this.logger.log(`Investment confirmed: ${id}`);
-    return saved;
-  }
-
-  // ───────────────────────────────────────────────
-  // Portfolio Methods
-  // ───────────────────────────────────────────────
-
-  async getPortfolio(investorId: string): Promise<{
-    active: Investment[];
-    pending: Investment[];
-    completed: Investment[];
-    cancelled: Investment[];
-  }> {
-    const investments = await this.investmentRepo.find({
-      where: { investorId },
-      relations: ['project'],
-      order: { investedAt: 'DESC' },
+      return updatedInvestment;
     });
 
+    this.logger.log(`Investment confirmed: ${id}`);
+
+    return this.normalizeInvestment(confirmed);
+  }
+
+  async getPortfolio(investorId: string): Promise<{
+    active: any[];
+    pending: any[];
+    completed: any[];
+    cancelled: any[];
+  }> {
+    const investments = await this.prisma.investment.findMany({
+      where: { investorId },
+      include: { project: true },
+      orderBy: { investedAt: 'desc' },
+    });
+
+    const normalized = investments.map((investment) => this.normalizeInvestment(investment));
+
     return {
-      active: investments.filter((i) => i.status === InvestmentStatus.CONFIRMED),
-      pending: investments.filter((i) => i.status === InvestmentStatus.PENDING),
-      completed: investments.filter((i) => i.status === InvestmentStatus.CONFIRMED && i.actualReturns > 0),
-      cancelled: investments.filter(
-        (i) =>
-          i.status === InvestmentStatus.CANCELLED ||
-          i.status === InvestmentStatus.REFUNDED,
+      active: normalized.filter((investment) => investment.status === InvestmentStatus.CONFIRMED),
+      pending: normalized.filter((investment) => investment.status === InvestmentStatus.PENDING),
+      completed: normalized.filter(
+        (investment) =>
+          investment.status === InvestmentStatus.CONFIRMED && Number(investment.actualReturns) > 0,
+      ),
+      cancelled: normalized.filter((investment) =>
+        [InvestmentStatus.CANCELLED, InvestmentStatus.REFUNDED].includes(investment.status),
       ),
     };
   }
 
   async getPortfolioStats(investorId: string): Promise<PortfolioStatsDto> {
-    const investments = await this.investmentRepo.find({
+    const investments = await this.prisma.investment.findMany({
       where: { investorId },
     });
 
@@ -546,29 +361,27 @@ export class InvestmentsService {
     let pendingInvestments = 0;
     let cancelledInvestments = 0;
 
-    for (const inv of investments) {
-      if (inv.status === InvestmentStatus.CONFIRMED) {
-        totalInvested = this.addDecimals(totalInvested, inv.amount);
-        totalReturns = this.addDecimals(totalReturns, inv.actualReturns);
-        activeInvestments++;
-        if (inv.actualReturns > 0) {
-          completedInvestments++;
+    for (const investment of investments) {
+      const amount = Number(investment.amount);
+      const actualReturns = Number(investment.actualReturns);
+
+      if (investment.status === InvestmentStatus.CONFIRMED) {
+        totalInvested = this.addDecimals(totalInvested, amount);
+        totalReturns = this.addDecimals(totalReturns, actualReturns);
+        activeInvestments += 1;
+        if (actualReturns > 0) {
+          completedInvestments += 1;
         }
-      } else if (inv.status === InvestmentStatus.PENDING) {
-        pendingInvestments++;
-      } else if (
-        inv.status === InvestmentStatus.CANCELLED ||
-        inv.status === InvestmentStatus.REFUNDED
-      ) {
-        cancelledInvestments++;
+      } else if (investment.status === InvestmentStatus.PENDING) {
+        pendingInvestments += 1;
+      } else if ([InvestmentStatus.CANCELLED, InvestmentStatus.REFUNDED].includes(investment.status as any)) {
+        cancelledInvestments += 1;
       }
     }
 
     const netValue = this.addDecimals(totalInvested, totalReturns);
     const roiPercentage =
-      totalInvested > 0
-        ? this.roundDecimals((totalReturns / totalInvested) * 100, 2)
-        : 0;
+      totalInvested > 0 ? this.roundDecimals((totalReturns / totalInvested) * 100, 2) : 0;
 
     return {
       totalInvested,
@@ -583,20 +396,16 @@ export class InvestmentsService {
     };
   }
 
-  async getPortfolioPerformance(
-    investorId: string,
-  ): Promise<PortfolioPerformanceDto> {
-    const investments = await this.investmentRepo.find({
+  async getPortfolioPerformance(investorId: string): Promise<PortfolioPerformanceDto> {
+    const investments = await this.prisma.investment.findMany({
       where: { investorId },
-      order: { investedAt: 'ASC' },
+      orderBy: { investedAt: 'asc' },
     });
 
-    // Group by month
     const monthlyMap = new Map<string, MonthlyPerformanceDto>();
 
-    for (const inv of investments) {
-      const month = this.formatMonth(inv.investedAt);
-
+    for (const investment of investments) {
+      const month = this.formatMonth(investment.investedAt);
       if (!monthlyMap.has(month)) {
         monthlyMap.set(month, {
           month,
@@ -607,34 +416,30 @@ export class InvestmentsService {
         });
       }
 
-      const data = monthlyMap.get(month)!;
-      if (inv.status === InvestmentStatus.CONFIRMED) {
-        data.amountInvested = this.addDecimals(data.amountInvested, inv.amount);
-        data.investmentCount++;
+      const bucket = monthlyMap.get(month)!;
+      const amount = Number(investment.amount);
+      const returned = Number(investment.actualReturns);
+
+      if (investment.status === InvestmentStatus.CONFIRMED) {
+        bucket.amountInvested = this.addDecimals(bucket.amountInvested, amount);
+        bucket.investmentCount += 1;
       }
-      data.amountReturned = this.addDecimals(data.amountReturned, inv.actualReturns);
-      data.netCashFlow = this.addDecimals(data.amountReturned, -data.amountInvested);
+      bucket.amountReturned = this.addDecimals(bucket.amountReturned, returned);
+      bucket.netCashFlow = this.addDecimals(bucket.amountReturned, -bucket.amountInvested);
     }
 
-    // Also process returns that may come later
-    const allMonths = Array.from(monthlyMap.keys()).sort();
+    const months = Array.from(monthlyMap.keys()).sort();
+    const monthlyData = months.map((month) => ({ ...monthlyMap.get(month)! }));
 
-    const monthlyData: MonthlyPerformanceDto[] = allMonths.map((month) => ({
-      ...monthlyMap.get(month)!,
-    }));
-
-    // Calculate cumulative data
     let cumulativeInvested = 0;
     let cumulativeReturns = 0;
-
     const cumulativeInvestedData: { month: string; amount: number }[] = [];
     const cumulativeReturnsData: { month: string; amount: number }[] = [];
 
-    for (const month of allMonths) {
-      const data = monthlyMap.get(month)!;
-      cumulativeInvested = this.addDecimals(cumulativeInvested, data.amountInvested);
-      cumulativeReturns = this.addDecimals(cumulativeReturns, data.amountReturned);
-
+    for (const month of months) {
+      const bucket = monthlyMap.get(month)!;
+      cumulativeInvested = this.addDecimals(cumulativeInvested, bucket.amountInvested);
+      cumulativeReturns = this.addDecimals(cumulativeReturns, bucket.amountReturned);
       cumulativeInvestedData.push({ month, amount: cumulativeInvested });
       cumulativeReturnsData.push({ month, amount: cumulativeReturns });
     }
@@ -646,331 +451,394 @@ export class InvestmentsService {
     };
   }
 
-  // ───────────────────────────────────────────────
-  // Admin Stats
-  // ───────────────────────────────────────────────
-
   async getStats(): Promise<InvestmentStatsDto> {
-    const investments = await this.investmentRepo.find({
-      relations: ['project'],
+    const investments = await this.prisma.investment.findMany({
+      include: { project: true },
     });
 
     let totalAmount = 0;
     let totalReturns = 0;
-    const statusMap = new Map<string, { count: number; totalAmount: number }>();
-    const sectorMap = new Map<string, { count: number; totalAmount: number }>();
     let pendingCount = 0;
     let confirmedCount = 0;
+    const statusMap = new Map<string, { count: number; totalAmount: number }>();
+    const sectorMap = new Map<string, { count: number; totalAmount: number }>();
 
-    for (const inv of investments) {
-      totalAmount = this.addDecimals(totalAmount, inv.amount);
-      totalReturns = this.addDecimals(totalReturns, inv.actualReturns);
+    for (const investment of investments) {
+      const amount = Number(investment.amount);
+      const returns = Number(investment.actualReturns);
+      totalAmount = this.addDecimals(totalAmount, amount);
+      totalReturns = this.addDecimals(totalReturns, returns);
 
-      // By status
-      const statusEntry = statusMap.get(inv.status) || { count: 0, totalAmount: 0 };
-      statusEntry.count++;
-      statusEntry.totalAmount = this.addDecimals(statusEntry.totalAmount, inv.amount);
-      statusMap.set(inv.status, statusEntry);
+      const statusEntry = statusMap.get(investment.status) || { count: 0, totalAmount: 0 };
+      statusEntry.count += 1;
+      statusEntry.totalAmount = this.addDecimals(statusEntry.totalAmount, amount);
+      statusMap.set(investment.status, statusEntry);
 
-      if (inv.status === InvestmentStatus.PENDING) pendingCount++;
-      if (inv.status === InvestmentStatus.CONFIRMED) confirmedCount++;
+      if (investment.status === InvestmentStatus.PENDING) pendingCount += 1;
+      if (investment.status === InvestmentStatus.CONFIRMED) confirmedCount += 1;
 
-      // By sector (from project)
-      const sector = inv.project?.sector || 'UNKNOWN';
+      const sector = investment.project?.sector || 'UNKNOWN';
       const sectorEntry = sectorMap.get(sector) || { count: 0, totalAmount: 0 };
-      sectorEntry.count++;
-      sectorEntry.totalAmount = this.addDecimals(sectorEntry.totalAmount, inv.amount);
+      sectorEntry.count += 1;
+      sectorEntry.totalAmount = this.addDecimals(sectorEntry.totalAmount, amount);
       sectorMap.set(sector, sectorEntry);
     }
 
     return {
       totalInvestments: investments.length,
       totalAmount,
-      byStatus: Array.from(statusMap.entries()).map(([status, data]) => ({
-        status,
-        ...data,
-      })),
-      bySector: Array.from(sectorMap.entries()).map(([sector, data]) => ({
-        sector,
-        ...data,
-      })),
+      byStatus: Array.from(statusMap.entries()).map(([status, data]) => ({ status, ...data })),
+      bySector: Array.from(sectorMap.entries()).map(([sector, data]) => ({ sector, ...data })),
       totalReturns,
       pendingCount,
       confirmedCount,
     };
   }
 
-  // ───────────────────────────────────────────────
-  // Transaction Methods
-  // ───────────────────────────────────────────────
-
-  async createTransaction(dto: CreateTransactionDto): Promise<Transaction> {
-    const transaction = this.transactionRepo.create({
-      ...dto,
-      status: dto.status || TransactionStatus.PENDING,
+  async createTransaction(dto: CreateTransactionDto): Promise<any> {
+    const transaction = await this.prisma.transaction.create({
+      data: {
+        type: dto.type as any,
+        amount: dto.amount,
+        currency: dto.currency || 'USD',
+        paymentMethod: dto.paymentMethod as any,
+        status: (dto.status || TransactionStatus.PENDING) as any,
+        userId: dto.userId,
+        investmentId: dto.investmentId,
+        projectId: dto.projectId,
+        paymentProvider: dto.paymentProvider,
+        providerTransactionId: dto.providerTransactionId,
+        fromParty: dto.fromParty,
+        toParty: dto.toParty,
+        riskScore: dto.riskScore,
+        jurisdiction: dto.jurisdiction,
+        metadata: dto.metadata as Prisma.InputJsonValue | undefined,
+      },
+      include: transactionInclude,
     });
 
-    return this.transactionRepo.save(transaction);
+    return normalizePrisma(transaction);
   }
 
   async findTransactions(
     userId: string,
     filter: TransactionFilterDto,
-  ): Promise<PaginatedResponse<Transaction>> {
+  ): Promise<PaginatedResponse<any>> {
     return this.queryTransactions({ ...filter, userId });
   }
 
   async findAllTransactions(
     filter: TransactionFilterDto,
-  ): Promise<PaginatedResponse<Transaction>> {
+  ): Promise<PaginatedResponse<any>> {
     return this.queryTransactions(filter);
   }
 
-  private async queryTransactions(
-    filter: TransactionFilterDto & { userId?: string },
-  ): Promise<PaginatedResponse<Transaction>> {
-    const {
-      page = 1,
-      limit = 20,
-      type,
-      status,
-      startDate,
-      endDate,
-      userId,
-      investmentId,
-      projectId,
-      minAmount,
-      maxAmount,
-      sortBy = 'createdAt',
-      sortOrder = 'DESC',
-    } = filter;
-
-    const skip = (page - 1) * limit;
-
-    const query = this.transactionRepo.createQueryBuilder('transaction');
-
-    if (userId) {
-      query.where('transaction.userId = :userId', { userId });
-    }
-
-    if (type) {
-      query.andWhere('transaction.type = :type', { type });
-    }
-
-    if (status) {
-      query.andWhere('transaction.status = :status', { status });
-    }
-
-    if (startDate && endDate) {
-      query.andWhere('transaction.createdAt BETWEEN :startDate AND :endDate', {
-        startDate,
-        endDate,
-      });
-    } else if (startDate) {
-      query.andWhere('transaction.createdAt >= :startDate', { startDate });
-    } else if (endDate) {
-      query.andWhere('transaction.createdAt <= :endDate', { endDate });
-    }
-
-    if (investmentId) {
-      query.andWhere('transaction.investmentId = :investmentId', { investmentId });
-    }
-
-    if (projectId) {
-      query.andWhere('transaction.projectId = :projectId', { projectId });
-    }
-
-    if (minAmount !== undefined) {
-      query.andWhere('transaction.amount >= :minAmount', { minAmount });
-    }
-
-    if (maxAmount !== undefined) {
-      query.andWhere('transaction.amount <= :maxAmount', { maxAmount });
-    }
-
-    if (filter.maxRiskScore !== undefined) {
-      query.andWhere('transaction.riskScore <= :maxRiskScore', { maxRiskScore: filter.maxRiskScore });
-    }
-
-    if (filter.jurisdiction) {
-      query.andWhere('transaction.jurisdiction = :jurisdiction', { jurisdiction: filter.jurisdiction });
-    }
-
-    query.orderBy(`transaction.${sortBy}`, sortOrder);
-
-    const [data, total] = await query.skip(skip).take(limit).getManyAndCount();
-
-    return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPrevPage: page > 1,
-      },
-    };
-  }
-
-  async findTransactionById(id: string): Promise<Transaction> {
-    const transaction = await this.transactionRepo.findOne({
+  async findTransactionById(id: string): Promise<any> {
+    const transaction = await this.prisma.transaction.findUnique({
       where: { id },
+      include: transactionInclude,
     });
 
     if (!transaction) {
       throw new NotFoundException('Transaction not found');
     }
 
-    return transaction;
+    return normalizePrisma(transaction);
   }
 
-  async deposit(userId: string, dto: DepositDto): Promise<Transaction> {
-    const transaction = this.transactionRepo.create({
-      userId,
-      type: TransactionType.DEPOSIT,
-      amount: dto.amount,
-      currency: dto.currency || 'USD',
-      status: TransactionStatus.PENDING,
-      paymentMethod: dto.paymentMethod,
-      paymentProvider: dto.paymentProvider,
-    });
-
-    return this.transactionRepo.save(transaction);
-  }
-
-  async withdraw(userId: string, dto: WithdrawalDto): Promise<Transaction> {
-    const transaction = this.transactionRepo.create({
-      userId,
-      type: TransactionType.WITHDRAWAL,
-      amount: dto.amount,
-      currency: dto.currency || 'USD',
-      status: TransactionStatus.PENDING,
-      paymentMethod: PaymentMethod.BANK_TRANSFER,
-      metadata: {
-        bankDetails: dto.bankDetails,
-        note: dto.note,
+  async deposit(userId: string, dto: DepositDto): Promise<any> {
+    const transaction = await this.prisma.transaction.create({
+      data: {
+        userId,
+        type: TransactionType.DEPOSIT as any,
+        amount: dto.amount,
+        currency: dto.currency || 'USD',
+        status: TransactionStatus.PENDING as any,
+        paymentMethod: dto.paymentMethod as any,
+        paymentProvider: dto.paymentProvider,
       },
+      include: transactionInclude,
     });
 
-    return this.transactionRepo.save(transaction);
+    return normalizePrisma(transaction);
   }
 
-  async processTransaction(id: string): Promise<Transaction> {
-    const transaction = await this.findTransactionById(id);
+  async withdraw(userId: string, dto: WithdrawalDto): Promise<any> {
+    const transaction = await this.prisma.transaction.create({
+      data: {
+        userId,
+        type: TransactionType.WITHDRAWAL as any,
+        amount: dto.amount,
+        currency: dto.currency || 'USD',
+        status: TransactionStatus.PENDING as any,
+        paymentMethod: PaymentMethod.BANK_TRANSFER as any,
+        metadata: {
+          bankDetails: dto.bankDetails,
+          note: dto.note,
+        },
+      },
+      include: transactionInclude,
+    });
 
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException(
-        `Cannot process transaction with status: ${transaction.status}. Only PENDING transactions can be processed.`,
-      );
-    }
-
-    transaction.status = TransactionStatus.COMPLETED;
-    transaction.processedAt = new Date();
-
-    return this.transactionRepo.save(transaction);
+    return normalizePrisma(transaction);
   }
 
-  async approveTransaction(id: string): Promise<Transaction> {
-    const transaction = await this.findTransactionById(id);
-    if (transaction.status !== TransactionStatus.PENDING) {
-      throw new BadRequestException('Only pending transactions can be approved');
-    }
-    transaction.status = TransactionStatus.COMPLETED;
-    transaction.processedAt = new Date();
-    return this.transactionRepo.save(transaction);
+  async processTransaction(id: string): Promise<any> {
+    return this.completePendingTransaction(id, 'process');
   }
 
-  async holdTransaction(id: string): Promise<Transaction> {
+  async approveTransaction(id: string): Promise<any> {
+    return this.completePendingTransaction(id, 'approve');
+  }
+
+  async holdTransaction(id: string): Promise<any> {
     const transaction = await this.findTransactionById(id);
-    if (transaction.status !== TransactionStatus.PENDING && transaction.status !== TransactionStatus.COMPLETED) {
+    if (![TransactionStatus.PENDING, TransactionStatus.COMPLETED].includes(transaction.status)) {
       throw new BadRequestException('Only pending or completed transactions can be held');
     }
-    transaction.status = TransactionStatus.PENDING;
-    transaction.processedAt = undefined as any;
-    return this.transactionRepo.save(transaction);
+
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: TransactionStatus.PENDING as any,
+        processedAt: null,
+      },
+      include: transactionInclude,
+    });
+
+    return normalizePrisma(updated);
   }
 
-  async escalateTransaction(id: string, notes?: string): Promise<Transaction> {
+  async escalateTransaction(id: string, notes?: string): Promise<any> {
     const transaction = await this.findTransactionById(id);
-    transaction.metadata = { ...(transaction.metadata || {}), escalated: true, escalationNotes: notes, escalatedAt: new Date().toISOString() };
-    return this.transactionRepo.save(transaction);
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        metadata: {
+          ...(transaction.metadata || {}),
+          escalated: true,
+          escalationNotes: notes,
+          escalatedAt: new Date().toISOString(),
+        },
+      },
+      include: transactionInclude,
+    });
+
+    return normalizePrisma(updated);
   }
 
-  async reverseTransaction(id: string, reason?: string): Promise<Transaction> {
+  async reverseTransaction(id: string, reason?: string): Promise<any> {
     const transaction = await this.findTransactionById(id);
     if (transaction.status === TransactionStatus.CANCELLED) {
       throw new BadRequestException('Transaction is already cancelled');
     }
-    transaction.status = TransactionStatus.CANCELLED;
-    transaction.metadata = { ...(transaction.metadata || {}), reversed: true, reversalReason: reason, reversedAt: new Date().toISOString() };
-    return this.transactionRepo.save(transaction);
+
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: TransactionStatus.CANCELLED as any,
+        metadata: {
+          ...(transaction.metadata || {}),
+          reversed: true,
+          reversalReason: reason,
+          reversedAt: new Date().toISOString(),
+        },
+      },
+      include: transactionInclude,
+    });
+
+    return normalizePrisma(updated);
   }
 
-  async findRelatedTransactions(projectId: string, excludeId: string): Promise<Transaction[]> {
-    return this.transactionRepo.find({
-      where: { projectId },
-      order: { createdAt: 'DESC' },
-    }).then(txs => txs.filter(t => t.id !== excludeId));
+  async findRelatedTransactions(projectId: string, excludeId: string): Promise<any[]> {
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        projectId,
+        NOT: { id: excludeId },
+      },
+      include: transactionInclude,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return transactions.map((transaction) => normalizePrisma(transaction));
   }
 
   async getTransactionStats(): Promise<TransactionStatsDto> {
-    const transactions = await this.transactionRepo.find();
+    const transactions = await this.prisma.transaction.findMany();
 
     let totalVolume = 0;
     let totalDeposits = 0;
     let totalWithdrawals = 0;
     let totalFees = 0;
-
     const typeMap = new Map<string, { count: number; totalAmount: number }>();
     const statusMap = new Map<string, { count: number; totalAmount: number }>();
 
-    for (const tx of transactions) {
-      totalVolume = this.addDecimals(totalVolume, tx.amount);
+    for (const transaction of transactions) {
+      const amount = Number(transaction.amount);
+      totalVolume = this.addDecimals(totalVolume, amount);
 
-      // By type
-      const typeEntry = typeMap.get(tx.type) || { count: 0, totalAmount: 0 };
-      typeEntry.count++;
-      typeEntry.totalAmount = this.addDecimals(typeEntry.totalAmount, tx.amount);
-      typeMap.set(tx.type, typeEntry);
+      const typeEntry = typeMap.get(transaction.type) || { count: 0, totalAmount: 0 };
+      typeEntry.count += 1;
+      typeEntry.totalAmount = this.addDecimals(typeEntry.totalAmount, amount);
+      typeMap.set(transaction.type, typeEntry);
 
-      // By status
-      const statusEntry = statusMap.get(tx.status) || { count: 0, totalAmount: 0 };
-      statusEntry.count++;
-      statusEntry.totalAmount = this.addDecimals(statusEntry.totalAmount, tx.amount);
-      statusMap.set(tx.status, statusEntry);
+      const statusEntry = statusMap.get(transaction.status) || { count: 0, totalAmount: 0 };
+      statusEntry.count += 1;
+      statusEntry.totalAmount = this.addDecimals(statusEntry.totalAmount, amount);
+      statusMap.set(transaction.status, statusEntry);
 
-      if (tx.type === TransactionType.DEPOSIT) {
-        totalDeposits = this.addDecimals(totalDeposits, tx.amount);
+      if (transaction.type === TransactionType.DEPOSIT) {
+        totalDeposits = this.addDecimals(totalDeposits, amount);
       }
-      if (tx.type === TransactionType.WITHDRAWAL) {
-        totalWithdrawals = this.addDecimals(totalWithdrawals, tx.amount);
+      if (transaction.type === TransactionType.WITHDRAWAL) {
+        totalWithdrawals = this.addDecimals(totalWithdrawals, amount);
       }
-      if (tx.type === TransactionType.FEE) {
-        totalFees = this.addDecimals(totalFees, tx.amount);
+      if (transaction.type === TransactionType.FEE) {
+        totalFees = this.addDecimals(totalFees, amount);
       }
     }
 
     return {
       totalTransactions: transactions.length,
       totalVolume,
-      byType: Array.from(typeMap.entries()).map(([type, data]) => ({
-        type,
-        ...data,
-      })),
-      byStatus: Array.from(statusMap.entries()).map(([status, data]) => ({
-        status,
-        ...data,
-      })),
+      byType: Array.from(typeMap.entries()).map(([type, data]) => ({ type, ...data })),
+      byStatus: Array.from(statusMap.entries()).map(([status, data]) => ({ status, ...data })),
       totalDeposits,
       totalWithdrawals,
       totalFees,
     };
   }
 
-  // ───────────────────────────────────────────────
-  // Decimal Helpers
-  // ───────────────────────────────────────────────
+  private async queryInvestments(
+    filter: InvestmentFilterDto & { investorId?: string },
+    includeInvestor: boolean,
+  ): Promise<PaginatedResponse<any>> {
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const sortBy = getSortField(filter.sortBy, INVESTMENT_SORT_FIELDS, 'createdAt');
+    const sortOrder = getSortOrder(filter.sortOrder);
+
+    const where: Prisma.InvestmentWhereInput = {
+      investorId: filter.investorId,
+      status: filter.status as any,
+      projectId: filter.projectId,
+      amount: this.buildAmountFilter(filter.minAmount, filter.maxAmount),
+      investedAt: this.buildDateFilter(filter.startDate, filter.endDate),
+    };
+
+    if (filter.search) {
+      where.OR = [
+        { transactionReference: { contains: filter.search, mode: 'insensitive' } },
+        { project: { title: { contains: filter.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const include = includeInvestor ? investmentInclude : { project: true };
+
+    const [investments, total] = await Promise.all([
+      this.prisma.investment.findMany({
+        where,
+        include,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+      }),
+      this.prisma.investment.count({ where }),
+    ]);
+
+    return {
+      data: investments.map((investment) => this.normalizeInvestment(investment)),
+      meta: buildPaginationMeta(page, limit, total),
+    };
+  }
+
+  private async queryTransactions(
+    filter: TransactionFilterDto & { userId?: string },
+  ): Promise<PaginatedResponse<any>> {
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const sortBy = getSortField(filter.sortBy, TRANSACTION_SORT_FIELDS, 'createdAt');
+    const sortOrder = getSortOrder(filter.sortOrder);
+
+    const where: Prisma.TransactionWhereInput = {
+      userId: filter.userId,
+      type: filter.type as any,
+      status: filter.status as any,
+      investmentId: filter.investmentId,
+      projectId: filter.projectId,
+      amount: this.buildAmountFilter(filter.minAmount, filter.maxAmount),
+      createdAt: this.buildDateFilter(filter.startDate, filter.endDate),
+      jurisdiction: filter.jurisdiction,
+      ...(filter.maxRiskScore !== undefined ? { riskScore: { lte: filter.maxRiskScore } } : {}),
+    };
+
+    const [transactions, total] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where,
+        include: transactionInclude,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sortBy]: sortOrder },
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
+
+    return {
+      data: transactions.map((transaction) => normalizePrisma(transaction)),
+      meta: buildPaginationMeta(page, limit, total),
+    };
+  }
+
+  private async completePendingTransaction(id: string, action: string): Promise<any> {
+    const transaction = await this.findTransactionById(id);
+
+    if (transaction.status !== TransactionStatus.PENDING) {
+      throw new BadRequestException(
+        `Cannot ${action} transaction with status: ${transaction.status}. Only PENDING transactions can be completed.`,
+      );
+    }
+
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: TransactionStatus.COMPLETED as any,
+        processedAt: new Date(),
+      },
+      include: transactionInclude,
+    });
+
+    return normalizePrisma(updated);
+  }
+
+  private normalizeInvestment(investment: any) {
+    const normalized = normalizePrisma(investment);
+    if (normalized.project) {
+      normalized.project = withFundingProgress(normalized.project);
+    }
+    return normalized;
+  }
+
+  private buildDateFilter(startDate?: string, endDate?: string): Prisma.DateTimeFilter | undefined {
+    if (!startDate && !endDate) {
+      return undefined;
+    }
+
+    return {
+      ...(startDate ? { gte: new Date(startDate) } : {}),
+      ...(endDate ? { lte: new Date(endDate) } : {}),
+    };
+  }
+
+  private buildAmountFilter(minAmount?: number, maxAmount?: number): Prisma.DecimalFilter | undefined {
+    if (minAmount === undefined && maxAmount === undefined) {
+      return undefined;
+    }
+
+    return {
+      ...(minAmount !== undefined ? { gte: minAmount } : {}),
+      ...(maxAmount !== undefined ? { lte: maxAmount } : {}),
+    };
+  }
 
   private addDecimals(a: number, b: number): number {
     return this.roundDecimals(a + b, 2);
@@ -982,9 +850,9 @@ export class InvestmentsService {
   }
 
   private formatMonth(date: Date): string {
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const parsed = new Date(date);
+    const year = parsed.getFullYear();
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
     return `${year}-${month}`;
   }
 }

@@ -1,14 +1,31 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-
-import { Message } from './entities/message.entity';
+import { Module, Global } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MessagingService } from './messaging.service';
-import { MessagingController } from './messaging.controller';
+import { EmailService } from './providers/email.service';
+import { SmsService } from './providers/sms.service';
+import { SendGridProvider } from './providers/sendgrid.provider';
+import { ZohoProvider } from './providers/zoho.provider';
+import { SubmailEmailProvider } from './providers/submail-email.provider';
+import { TwilioProvider } from './providers/twilio.provider';
+import { AfricasTalkingProvider } from './providers/africas-talking.provider';
+import { SubmailSmsProvider } from './providers/submail-sms.provider';
 
+@Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([Message])],
-  controllers: [MessagingController],
-  providers: [MessagingService],
-  exports: [MessagingService],
+  imports: [ConfigModule],
+  providers: [
+    MessagingService,
+    EmailService,
+    SmsService,
+    // Email Providers
+    SendGridProvider,
+    ZohoProvider,
+    SubmailEmailProvider,
+    // SMS Providers
+    TwilioProvider,
+    AfricasTalkingProvider,
+    SubmailSmsProvider,
+  ],
+  exports: [MessagingService, EmailService, SmsService],
 })
 export class MessagingModule {}

@@ -17,7 +17,7 @@ import { DueDiligenceService } from './due-diligence.service';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
 import { Roles } from '@common/decorators/roles.decorator';
 import { UserRole } from '@common/enums';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { User } from '@modules/users/entities/user.entity';
 import {
@@ -31,7 +31,7 @@ import {
 
 @ApiTags('Due Diligence')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('due-diligence')
 export class DueDiligenceController {
   constructor(private readonly service: DueDiligenceService) {}

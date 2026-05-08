@@ -7,12 +7,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { jwtVerify, createRemoteJWKSet, JWTPayload } from 'jose';
+import { PrismaService } from '@database/prisma.service';
 import { IS_PUBLIC_KEY } from '@common/decorators/public.decorator';
-import { User } from '@modules/users/entities/user.entity';
-import { UserRole, UserStatus } from '@common/enums';
+import { KycStatus, UserStatus } from '@common/enums';
+import { createRoleProfile, mapUserRole, normalizeUser, userProfileInclude } from '@modules/users/user.prisma';
 
 interface OidcTokenPayload extends JWTPayload {
   sub: string;
@@ -32,10 +31,9 @@ export class OidcAuthGuard implements CanActivate {
   private jwksGetter: ReturnType<typeof createRemoteJWKSet> | null = null;
 
   constructor(
-    private reflector: Reflector,
-    private configService: ConfigService,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly reflector: Reflector,
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -46,7 +44,7 @@ export class OidcAuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
+    const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('Authorization header missing or invalid');
@@ -56,12 +54,11 @@ export class OidcAuthGuard implements CanActivate {
 
     try {
       const payload = await this.verifyToken(token);
-      const user = await this.resolveUser(payload);
-      request.user = user;
+      request.user = await this.resolveUser(payload);
       return true;
     } catch (error) {
-      this.logger.warn(`Token verification failed: ${error.message}`);
-      throw new UnauthorizedException(error.message || 'Invalid or expired token');
+      this.logger.warn(`Token verification failed: ${(error as Error).message}`);
+      throw new UnauthorizedException((error as Error).message || 'Invalid or expired token');
     }
   }
 
@@ -86,107 +83,53 @@ export class OidcAuthGuard implements CanActivate {
     return payload as OidcTokenPayload;
   }
 
-  private async resolveUser(payload: OidcTokenPayload): Promise<User> {
-    const oidcSub = payload.sub;
-
-    // Try to find existing user by oidcSub
-    let user = await this.userRepository.findOne({
-      where: { oidcSub },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
+  private async resolveUser(payload: OidcTokenPayload) {
+    const existingUser = await this.prisma.user.findFirst({
+      where: { oidcSub: payload.sub, deletedAt: null },
+      include: userProfileInclude,
     });
 
-    if (user) {
-      // Update last login and sync basic fields
-      user.lastLoginAt = new Date();
-      if (payload.email && user.email !== payload.email) {
-        user.email = payload.email;
-      }
-      if (payload.given_name && user.firstName !== payload.given_name) {
-        user.firstName = payload.given_name;
-      }
-      if (payload.family_name && user.lastName !== payload.family_name) {
-        user.lastName = payload.family_name;
-      }
-      if (payload.picture && user.avatar !== payload.picture) {
-        user.avatar = payload.picture;
-      }
-      await this.userRepository.save(user);
-      return user;
+    if (existingUser) {
+      const updatedUser = await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          lastLoginAt: new Date(),
+          email: payload.email || existingUser.email,
+          firstName: payload.given_name || existingUser.firstName,
+          lastName: payload.family_name || existingUser.lastName,
+          avatar: payload.picture || existingUser.avatar,
+        },
+        include: userProfileInclude,
+      });
+
+      return normalizeUser(updatedUser);
     }
 
-    // Auto-provision new user from OIDC claims
-    const email = payload.email || `${oidcSub}@oidc.local`;
-    const firstName = payload.given_name || payload.name?.split(' ')[0] || 'User';
-    const lastName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || 'Unknown';
-    const avatar = payload.picture || null;
-
-    // Map OIDC role claim to our UserRole
-    const role = this.mapOidcRole(payload.app_role || payload.global_role);
-
-    const newUser = this.userRepository.create({
-      oidcSub,
-      oidcIssuer: this.configService.get<string>('oidc.issuer'),
-      email,
-      firstName,
-      lastName,
-      avatar,
-      role,
-      status: UserStatus.ACTIVE,
-      kycStatus: payload.email_verified ? 'VERIFIED' : 'NOT_STARTED',
-      password: '', // No local password for OIDC users
-      lastLoginAt: new Date(),
-    } as any);
-
-    const savedUser = await this.userRepository.save(newUser) as unknown as User;
-
-    // Create role-specific profile
-    await this.createRoleProfile(savedUser.id, role);
-
-    this.logger.log(`Auto-provisioned OIDC user: ${email} (${role})`);
-
-    // Reload with profiles
-    return this.userRepository.findOneOrFail({
-      where: { id: savedUser.id },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
+    const createdUser = await this.prisma.user.create({
+      data: {
+        oidcSub: payload.sub,
+        oidcIssuer: this.configService.get<string>('oidc.issuer'),
+        email: payload.email || `${payload.sub}@oidc.local`,
+        firstName: payload.given_name || payload.name?.split(' ')[0] || 'User',
+        lastName: payload.family_name || payload.name?.split(' ').slice(1).join(' ') || 'Unknown',
+        avatar: payload.picture || null,
+        role: mapUserRole(payload.app_role || payload.global_role),
+        status: UserStatus.ACTIVE,
+        kycStatus: payload.email_verified ? KycStatus.VERIFIED : KycStatus.NOT_STARTED,
+        password: '',
+        lastLoginAt: new Date(),
+      },
     });
-  }
 
-  private mapOidcRole(oidcRole?: string): UserRole {
-    if (!oidcRole) return UserRole.INVESTOR;
-    const roleMap: Record<string, UserRole> = {
-      investor: UserRole.INVESTOR,
-      entrepreneur: UserRole.ENTREPRENEUR,
-      provider: UserRole.ASSESSOR,
-      assessor: UserRole.ASSESSOR,
-      admin: UserRole.ADMIN,
-      super_admin: UserRole.ADMIN,
-    };
-    return roleMap[oidcRole.toLowerCase()] || UserRole.INVESTOR;
-  }
+    await createRoleProfile(this.prisma, createdUser.id, createdUser.role);
 
-  private async createRoleProfile(userId: string, role: UserRole): Promise<void> {
-    const { InvestorProfile } = await import('@modules/users/entities/investor-profile.entity');
-    const { EntrepreneurProfile } = await import('@modules/users/entities/entrepreneur-profile.entity');
-    const { AssessorProfile } = await import('@modules/users/entities/assessor-profile.entity');
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: createdUser.id },
+      include: userProfileInclude,
+    });
 
-    switch (role) {
-      case UserRole.INVESTOR: {
-        const repo = this.userRepository.manager.getRepository(InvestorProfile);
-        await repo.save(repo.create({ userId }));
-        break;
-      }
-      case UserRole.ENTREPRENEUR: {
-        const repo = this.userRepository.manager.getRepository(EntrepreneurProfile);
-        await repo.save(repo.create({ userId, companyName: 'My Company', industry: 'Other' }));
-        break;
-      }
-      case UserRole.ASSESSOR: {
-        const repo = this.userRepository.manager.getRepository(AssessorProfile);
-        await repo.save(repo.create({ userId, organizationName: 'My Organization', yearsOfExperience: 0 }));
-        break;
-      }
-      default:
-        break;
-    }
+    this.logger.log(`Auto-provisioned OIDC user: ${user.email} (${user.role})`);
+
+    return normalizeUser(user);
   }
 }

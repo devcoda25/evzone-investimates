@@ -6,10 +6,15 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Brackets } from 'typeorm';
-import { Project } from './entities/project.entity';
-import { Milestone } from './entities/milestone.entity';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '@database/prisma.service';
+import {
+  buildPaginationMeta,
+  getSortField,
+  getSortOrder,
+  normalizePrisma,
+  withFundingProgress,
+} from '@database/prisma.helpers';
 import {
   CreateProjectDto,
   UpdateProjectDto,
@@ -17,174 +22,241 @@ import {
   CreateMilestoneDto,
   UpdateMilestoneDto,
 } from './dto';
-import { ProjectStatus, ProjectSector, UserRole, MilestoneStatus } from '@common/enums';
-import { PaginatedResponse, PaginationDto } from '@common/dto/pagination.dto';
+import { ProjectStatus, UserRole, MilestoneStatus } from '@common/enums';
+import { PaginatedResponse } from '@common/dto/pagination.dto';
 import { User } from '@modules/users/entities/user.entity';
+
+const PROJECT_SORT_FIELDS = [
+  'createdAt',
+  'updatedAt',
+  'title',
+  'fundingGoal',
+  'fundingRaised',
+  'campaignEndDate',
+  'viewCount',
+  'featuredOrder',
+  'status',
+  'country',
+  'city',
+] as const;
+
+const MILESTONE_SORT_FIELDS = ['createdAt', 'updatedAt', 'dueDate', 'order', 'title'] as const;
+
+const projectListInclude = {
+  milestones: true,
+} satisfies Prisma.ProjectInclude;
+
+const projectFullInclude = {
+  milestones: true,
+  entrepreneur: {
+    include: {
+      investorProfile: true,
+      entrepreneurProfile: true,
+      assessorProfile: true,
+    },
+  },
+} satisfies Prisma.ProjectInclude;
 
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
 
-  constructor(
-    @InjectRepository(Project)
-    private readonly projectRepo: Repository<Project>,
-    @InjectRepository(Milestone)
-    private readonly milestoneRepo: Repository<Milestone>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // ───────────────────────────────────────────────
-  // Projects
-  // ───────────────────────────────────────────────
-
-  async create(entrepreneurId: string, dto: CreateProjectDto): Promise<Project> {
+  async create(entrepreneurId: string, dto: CreateProjectDto): Promise<any> {
     const slug = this.generateSlug(dto.title);
 
-    // Check slug uniqueness
-    const existing = await this.projectRepo.findOne({ where: { slug }, withDeleted: true });
+    const existing = await this.prisma.project.findFirst({
+      where: { slug },
+    });
     if (existing) {
       throw new ConflictException('A project with a similar title already exists');
     }
 
-    const project = this.projectRepo.create({
-      ...dto,
-      slug,
-      entrepreneurId,
-      status: ProjectStatus.DRAFT,
-      fundingRaised: 0,
+    const project = await this.prisma.project.create({
+      data: {
+        entrepreneurId,
+        slug,
+        title: dto.title,
+        subtitle: dto.subtitle,
+        description: dto.description,
+        longDescription: dto.longDescription,
+        coverImage: dto.coverImage,
+        galleryImages: dto.galleryImages || [],
+        videoUrl: dto.videoUrl,
+        status: ProjectStatus.DRAFT as any,
+        fundingGoal: dto.fundingGoal,
+        fundingRaised: 0,
+        minInvestment: dto.minInvestment ?? 100,
+        maxInvestment: dto.maxInvestment,
+        currency: dto.currency || 'USD',
+        equityOffered: dto.equityOffered,
+        country: dto.country,
+        city: dto.city,
+        region: dto.region,
+        sector: dto.sector as any,
+        stage: dto.stage as any,
+        impactMetrics: dto.impactMetrics as Prisma.InputJsonValue | undefined,
+        sdgs: dto.sdgs || [],
+        campaignStartDate: dto.campaignStartDate ? new Date(dto.campaignStartDate) : undefined,
+        campaignEndDate: dto.campaignEndDate ? new Date(dto.campaignEndDate) : undefined,
+        projectStartDate: dto.projectStartDate ? new Date(dto.projectStartDate) : undefined,
+        projectEndDate: dto.projectEndDate ? new Date(dto.projectEndDate) : undefined,
+        teamMembers: dto.teamMembers as Prisma.InputJsonValue | undefined,
+        risks: dto.risks as Prisma.InputJsonValue | undefined,
+        faqs: dto.faqs as Prisma.InputJsonValue | undefined,
+      },
+      include: projectListInclude,
     });
 
-    const saved = await this.projectRepo.save(project);
-    this.logger.log(`Project created: ${saved.title} by ${entrepreneurId}`);
-    return saved;
+    this.logger.log(`Project created: ${project.title} by ${entrepreneurId}`);
+
+    return withFundingProgress(project as any);
   }
 
-  async findAll(filter: ProjectFilterDto, user?: User): Promise<PaginatedResponse<Project>> {
-    const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'DESC' } = filter;
-    const qb = this.projectRepo.createQueryBuilder('project');
+  async findAll(filter: ProjectFilterDto, user?: User): Promise<PaginatedResponse<any>> {
+    const page = filter.page ?? 1;
+    const limit = filter.limit ?? 20;
+    const sortBy = getSortField(filter.sortBy, PROJECT_SORT_FIELDS, 'createdAt');
+    const sortOrder = getSortOrder(filter.sortOrder);
+    const skip = (page - 1) * limit;
 
-    // Public filter: only show active/funded/completed unless admin
+    const where: Prisma.ProjectWhereInput = {
+      deletedAt: null,
+    };
+
     const isAdmin = user?.role === UserRole.ADMIN;
+    const publicStatuses = [ProjectStatus.ACTIVE, ProjectStatus.FUNDED, ProjectStatus.COMPLETED];
     if (!isAdmin) {
-      qb.where('project.status IN (:...publicStatuses)', {
-        publicStatuses: [ProjectStatus.ACTIVE, ProjectStatus.FUNDED, ProjectStatus.COMPLETED],
-      });
-    }
-
-    // Apply filters
-    if (filter.status) {
-      qb.andWhere('project.status = :status', { status: filter.status });
+      if (filter.status) {
+        if (!publicStatuses.includes(filter.status)) {
+          return {
+            data: [],
+            meta: buildPaginationMeta(page, limit, 0),
+          };
+        }
+        where.status = filter.status as any;
+      } else {
+        where.status = { in: publicStatuses as any };
+      }
+    } else if (filter.status) {
+      where.status = filter.status as any;
     }
     if (filter.sector) {
-      qb.andWhere('project.sector = :sector', { sector: filter.sector });
+      where.sector = filter.sector as any;
     }
     if (filter.stage) {
-      qb.andWhere('project.stage = :stage', { stage: filter.stage });
+      where.stage = filter.stage as any;
     }
     if (filter.country) {
-      qb.andWhere('project.country ILIKE :country', { country: `%${filter.country}%` });
+      where.country = { contains: filter.country, mode: 'insensitive' };
     }
     if (filter.entrepreneurId) {
-      qb.andWhere('project.entrepreneurId = :entrepreneurId', { entrepreneurId: filter.entrepreneurId });
+      where.entrepreneurId = filter.entrepreneurId;
     }
     if (filter.mine && user) {
-      qb.andWhere('project.entrepreneurId = :mineId', { mineId: user.id });
+      where.entrepreneurId = user.id;
     }
     if (filter.search) {
-      qb.andWhere(
-        new Brackets((sqb) => {
-          sqb.where('project.title ILIKE :search', { search: `%${filter.search}%` })
-            .orWhere('project.description ILIKE :search', { search: `%${filter.search}%` })
-            .orWhere('project.country ILIKE :search', { search: `%${filter.search}%` });
-        }),
-      );
+      where.OR = [
+        { title: { contains: filter.search, mode: 'insensitive' } },
+        { description: { contains: filter.search, mode: 'insensitive' } },
+        { country: { contains: filter.search, mode: 'insensitive' } },
+      ];
     }
 
-    // Exclude soft-deleted
-    qb.andWhere('project.deletedAt IS NULL');
-
-    // Featured ordering
+    const orderBy: Prisma.ProjectOrderByWithRelationInput[] = [];
     if (filter.featured) {
-      qb.addOrderBy('project.featured', 'DESC');
-      qb.addOrderBy('project.featuredOrder', 'ASC');
+      orderBy.push({ featured: 'desc' }, { featuredOrder: 'asc' });
     }
+    orderBy.push({ [sortBy]: sortOrder });
 
-    qb.orderBy(`project.${sortBy}`, sortOrder);
-
-    const [data, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [projects, total] = await Promise.all([
+      this.prisma.project.findMany({
+        where,
+        include: projectListInclude,
+        skip,
+        take: limit,
+        orderBy,
+      }),
+      this.prisma.project.count({ where }),
+    ]);
 
     return {
-      data,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page * limit < total,
-        hasPrevPage: page > 1,
-      },
+      data: projects.map((project) => withFundingProgress(project as any)),
+      meta: buildPaginationMeta(page, limit, total),
     };
   }
 
-  async findFeatured(): Promise<Project[]> {
-    return this.projectRepo.find({
-      where: { featured: true, status: ProjectStatus.ACTIVE },
-      order: { featuredOrder: 'ASC' },
+  async findFeatured(): Promise<any[]> {
+    const projects = await this.prisma.project.findMany({
+      where: {
+        featured: true,
+        status: ProjectStatus.ACTIVE as any,
+        deletedAt: null,
+      },
+      include: projectListInclude,
+      orderBy: [{ featuredOrder: 'asc' }, { createdAt: 'desc' }],
       take: 6,
     });
+
+    return projects.map((project) => withFundingProgress(project as any));
   }
 
-  async findOne(id: string, user?: User): Promise<Project> {
-    const project = await this.projectRepo.findOne({
-      where: { id },
-      relations: ['milestones'],
+  async findOne(id: string, user?: User): Promise<any> {
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null },
+      include: projectListInclude,
     });
 
     if (!project) {
       throw new NotFoundException('Project not found');
     }
 
-    // Check visibility
-    const isOwner = user && project.entrepreneurId === user.id;
+    const isOwner = !!user && project.entrepreneurId === user.id;
     const isAdmin = user?.role === UserRole.ADMIN;
-    const isPublic = [ProjectStatus.ACTIVE, ProjectStatus.FUNDED, ProjectStatus.COMPLETED].includes(project.status);
+    const isPublic = [ProjectStatus.ACTIVE, ProjectStatus.FUNDED, ProjectStatus.COMPLETED].includes(
+      project.status as any,
+    );
 
     if (!isPublic && !isOwner && !isAdmin) {
       throw new ForbiddenException('You do not have access to this project');
     }
 
-    // Increment view count
     if (!isOwner) {
+      await this.prisma.project.update({
+        where: { id },
+        data: { viewCount: { increment: 1 } },
+      });
       project.viewCount += 1;
-      await this.projectRepo.save(project);
     }
 
-    return project;
+    return withFundingProgress(project as any);
   }
 
-  async findOneFull(id: string, user?: User): Promise<Project> {
-    const project = await this.projectRepo.findOne({
-      where: { id },
-      relations: ['milestones', 'entrepreneur'],
+  async findOneFull(id: string, user?: User): Promise<any> {
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null },
+      include: projectFullInclude,
     });
 
     if (!project) {
       throw new NotFoundException('Project not found');
     }
 
-    const isOwner = user && project.entrepreneurId === user.id;
+    const isOwner = !!user && project.entrepreneurId === user.id;
     const isAdmin = user?.role === UserRole.ADMIN;
 
     if (!isOwner && !isAdmin) {
       throw new ForbiddenException('You do not have access to full project details');
     }
 
-    return project;
+    return withFundingProgress(project as any);
   }
 
-  async update(id: string, dto: UpdateProjectDto, user: User): Promise<Project> {
+  async update(id: string, dto: UpdateProjectDto, user: User): Promise<any> {
     const project = await this.findOne(id, user);
 
-    // Only owner or admin can update
     const isOwner = project.entrepreneurId === user.id;
     const isAdmin = user.role === UserRole.ADMIN;
 
@@ -192,26 +264,59 @@ export class ProjectsService {
       throw new ForbiddenException('You can only update your own projects');
     }
 
-    // Entrepreneurs can only update DRAFT or UNDER_REVIEW projects
     if (isOwner && !isAdmin && ![ProjectStatus.DRAFT, ProjectStatus.UNDER_REVIEW].includes(project.status)) {
       throw new BadRequestException('Cannot update a project that is already active or funded');
     }
 
-    // If title changed, regenerate slug
+    let slug = project.slug;
     if (dto.title && dto.title !== project.title) {
-      const newSlug = this.generateSlug(dto.title);
-      const existing = await this.projectRepo.findOne({
-        where: { slug: newSlug },
-        withDeleted: true,
+      slug = this.generateSlug(dto.title);
+      const existing = await this.prisma.project.findFirst({
+        where: {
+          slug,
+          NOT: { id },
+        },
       });
-      if (existing && existing.id !== id) {
+      if (existing) {
         throw new ConflictException('A project with a similar title already exists');
       }
-      (dto as any).slug = newSlug;
     }
 
-    Object.assign(project, dto);
-    return this.projectRepo.save(project);
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: {
+        slug,
+        title: dto.title,
+        subtitle: dto.subtitle,
+        description: dto.description,
+        longDescription: dto.longDescription,
+        coverImage: dto.coverImage,
+        galleryImages: dto.galleryImages,
+        videoUrl: dto.videoUrl,
+        fundingGoal: dto.fundingGoal,
+        minInvestment: dto.minInvestment,
+        maxInvestment: dto.maxInvestment,
+        currency: dto.currency,
+        equityOffered: dto.equityOffered,
+        country: dto.country,
+        city: dto.city,
+        region: dto.region,
+        sector: dto.sector as any,
+        stage: dto.stage as any,
+        impactMetrics: dto.impactMetrics as Prisma.InputJsonValue | undefined,
+        sdgs: dto.sdgs,
+        campaignStartDate: dto.campaignStartDate ? new Date(dto.campaignStartDate) : undefined,
+        campaignEndDate: dto.campaignEndDate ? new Date(dto.campaignEndDate) : undefined,
+        projectStartDate: dto.projectStartDate ? new Date(dto.projectStartDate) : undefined,
+        projectEndDate: dto.projectEndDate ? new Date(dto.projectEndDate) : undefined,
+        teamMembers: dto.teamMembers as Prisma.InputJsonValue | undefined,
+        risks: dto.risks as Prisma.InputJsonValue | undefined,
+        faqs: dto.faqs as Prisma.InputJsonValue | undefined,
+      },
+      include: projectListInclude,
+    });
+
+    return withFundingProgress(updated as any);
   }
 
   async remove(id: string, user: User): Promise<void> {
@@ -224,11 +329,15 @@ export class ProjectsService {
       throw new ForbiddenException('You can only delete your own projects');
     }
 
-    await this.projectRepo.softDelete(id);
+    await this.prisma.project.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
     this.logger.log(`Project soft-deleted: ${id}`);
   }
 
-  async submitForReview(id: string, user: User): Promise<Project> {
+  async submitForReview(id: string, user: User): Promise<any> {
     const project = await this.findOne(id, user);
 
     if (project.entrepreneurId !== user.id) {
@@ -239,111 +348,143 @@ export class ProjectsService {
       throw new BadRequestException('Only draft projects can be submitted for review');
     }
 
-    project.status = ProjectStatus.UNDER_REVIEW;
-    return this.projectRepo.save(project);
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: { status: ProjectStatus.UNDER_REVIEW as any },
+      include: projectListInclude,
+    });
+
+    return withFundingProgress(updated as any);
   }
 
-  async approve(id: string, user: User): Promise<Project> {
+  async approve(id: string, user: User): Promise<any> {
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Only admins can approve projects');
     }
 
-    const project = await this.projectRepo.findOne({ where: { id } });
-    if (!project) throw new NotFoundException('Project not found');
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
 
-    if (![ProjectStatus.UNDER_REVIEW, ProjectStatus.DRAFT].includes(project.status)) {
+    if (![ProjectStatus.UNDER_REVIEW, ProjectStatus.DRAFT].includes(project.status as any)) {
       throw new BadRequestException('Project is not in review status');
     }
 
-    project.status = ProjectStatus.ACTIVE;
-    return this.projectRepo.save(project);
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: { status: ProjectStatus.ACTIVE as any },
+      include: projectListInclude,
+    });
+
+    return withFundingProgress(updated as any);
   }
 
-  async reject(id: string, user: User): Promise<Project> {
+  async reject(id: string, user: User): Promise<any> {
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Only admins can reject projects');
     }
 
-    const project = await this.projectRepo.findOne({ where: { id } });
-    if (!project) throw new NotFoundException('Project not found');
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
 
-    if (![ProjectStatus.UNDER_REVIEW, ProjectStatus.DRAFT].includes(project.status)) {
+    if (![ProjectStatus.UNDER_REVIEW, ProjectStatus.DRAFT].includes(project.status as any)) {
       throw new BadRequestException('Project is not in review status');
     }
 
-    project.status = ProjectStatus.CANCELLED;
-    return this.projectRepo.save(project);
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: { status: ProjectStatus.CANCELLED as any },
+      include: projectListInclude,
+    });
+
+    return withFundingProgress(updated as any);
   }
 
-  async toggleFeatured(id: string, user: User): Promise<Project> {
+  async toggleFeatured(id: string, user: User): Promise<any> {
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException('Only admins can feature projects');
     }
 
-    const project = await this.projectRepo.findOne({ where: { id } });
-    if (!project) throw new NotFoundException('Project not found');
-
-    project.featured = !project.featured;
-    if (project.featured && !project.featuredOrder) {
-      // Get max featured order
-      const maxOrder = await this.projectRepo
-        .createQueryBuilder('p')
-        .select('MAX(p.featuredOrder)', 'max')
-        .where('p.featured = true')
-        .getRawOne();
-      project.featuredOrder = (maxOrder?.max || 0) + 1;
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null },
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
     }
 
-    return this.projectRepo.save(project);
+    let featuredOrder = project.featuredOrder;
+    if (!project.featured) {
+      const maxFeaturedOrder = await this.prisma.project.aggregate({
+        where: { featured: true, deletedAt: null },
+        _max: { featuredOrder: true },
+      });
+      featuredOrder = (maxFeaturedOrder._max.featuredOrder || 0) + 1;
+    }
+
+    const updated = await this.prisma.project.update({
+      where: { id },
+      data: {
+        featured: !project.featured,
+        featuredOrder: project.featured ? null : featuredOrder,
+      },
+      include: projectListInclude,
+    });
+
+    return withFundingProgress(updated as any);
   }
 
   async getStats(): Promise<any> {
-    const total = await this.projectRepo.count();
-    const byStatus = await this.projectRepo
-      .createQueryBuilder('p')
-      .select('p.status', 'status')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('p.status')
-      .getRawMany();
+    const projects = await this.prisma.project.findMany({
+      where: { deletedAt: null },
+      select: {
+        status: true,
+        sector: true,
+        fundingGoal: true,
+        fundingRaised: true,
+      },
+    });
 
-    const bySector = await this.projectRepo
-      .createQueryBuilder('p')
-      .select('p.sector', 'sector')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('p.sector')
-      .getRawMany();
+    const byStatusMap = new Map<string, number>();
+    const bySectorMap = new Map<string, number>();
+    let totalFundingGoal = 0;
+    let totalFundingRaised = 0;
 
-    const totalFundingGoal = await this.projectRepo
-      .createQueryBuilder('p')
-      .select('SUM(p.fundingGoal)', 'total')
-      .getRawOne();
-
-    const totalFundingRaised = await this.projectRepo
-      .createQueryBuilder('p')
-      .select('SUM(p.fundingRaised)', 'total')
-      .getRawOne();
+    for (const project of projects) {
+      byStatusMap.set(project.status, (byStatusMap.get(project.status) || 0) + 1);
+      bySectorMap.set(project.sector, (bySectorMap.get(project.sector) || 0) + 1);
+      totalFundingGoal += Number(project.fundingGoal || 0);
+      totalFundingRaised += Number(project.fundingRaised || 0);
+    }
 
     return {
-      total,
-      byStatus,
-      bySector,
-      totalFundingGoal: parseFloat(totalFundingGoal?.total || '0'),
-      totalFundingRaised: parseFloat(totalFundingRaised?.total || '0'),
+      total: projects.length,
+      byStatus: Array.from(byStatusMap.entries()).map(([status, count]) => ({ status, count })),
+      bySector: Array.from(bySectorMap.entries()).map(([sector, count]) => ({ sector, count })),
+      totalFundingGoal,
+      totalFundingRaised,
     };
   }
 
-  // ───────────────────────────────────────────────
-  // Milestones
-  // ───────────────────────────────────────────────
+  async findMilestones(projectId: string, user: User): Promise<any[]> {
+    await this.findOne(projectId, user);
 
-  async findMilestones(projectId: string, user: User): Promise<Milestone[]> {
-    await this.findOne(projectId, user); // validates access
-    return this.milestoneRepo.find({ where: { projectId }, order: { order: 'ASC' } });
+    const milestones = await this.prisma.milestone.findMany({
+      where: { projectId },
+      orderBy: { order: 'asc' },
+    });
+
+    return milestones.map((milestone) => normalizePrisma(milestone));
   }
 
-  async createMilestone(projectId: string, dto: CreateMilestoneDto, user: User): Promise<Milestone> {
+  async createMilestone(projectId: string, dto: CreateMilestoneDto, user: User): Promise<any> {
     const project = await this.findOne(projectId, user);
-
     const isOwner = project.entrepreneurId === user.id;
     const isAdmin = user.role === UserRole.ADMIN;
 
@@ -351,21 +492,31 @@ export class ProjectsService {
       throw new ForbiddenException('You can only add milestones to your own projects');
     }
 
-    const milestone = this.milestoneRepo.create({
-      ...dto,
-      projectId,
+    const milestone = await this.prisma.milestone.create({
+      data: {
+        projectId,
+        title: dto.title,
+        description: dto.description,
+        order: dto.order ?? 0,
+        status: (dto.status || MilestoneStatus.PENDING) as any,
+        deliverables: dto.deliverables as Prisma.InputJsonValue | undefined,
+        fundingTranche: dto.fundingTranche,
+        dueDate: new Date(dto.dueDate),
+      },
     });
 
-    return this.milestoneRepo.save(milestone);
+    return normalizePrisma(milestone);
   }
 
-  async updateMilestone(milestoneId: string, dto: UpdateMilestoneDto, user: User): Promise<Milestone> {
-    const milestone = await this.milestoneRepo.findOne({
+  async updateMilestone(milestoneId: string, dto: UpdateMilestoneDto, user: User): Promise<any> {
+    const milestone = await this.prisma.milestone.findUnique({
       where: { id: milestoneId },
-      relations: ['project'],
+      include: { project: true },
     });
 
-    if (!milestone) throw new NotFoundException('Milestone not found');
+    if (!milestone) {
+      throw new NotFoundException('Milestone not found');
+    }
 
     const isOwner = milestone.project.entrepreneurId === user.id;
     const isAdmin = user.role === UserRole.ADMIN;
@@ -374,17 +525,31 @@ export class ProjectsService {
       throw new ForbiddenException('You can only update milestones for your own projects');
     }
 
-    Object.assign(milestone, dto);
-    return this.milestoneRepo.save(milestone);
-  }
-
-  async completeMilestone(milestoneId: string, user: User): Promise<Milestone> {
-    const milestone = await this.milestoneRepo.findOne({
+    const updated = await this.prisma.milestone.update({
       where: { id: milestoneId },
-      relations: ['project'],
+      data: {
+        title: dto.title,
+        description: dto.description,
+        order: dto.order,
+        status: dto.status as any,
+        deliverables: dto.deliverables as Prisma.InputJsonValue | undefined,
+        fundingTranche: dto.fundingTranche,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      },
     });
 
-    if (!milestone) throw new NotFoundException('Milestone not found');
+    return normalizePrisma(updated);
+  }
+
+  async completeMilestone(milestoneId: string, user: User): Promise<any> {
+    const milestone = await this.prisma.milestone.findUnique({
+      where: { id: milestoneId },
+      include: { project: true },
+    });
+
+    if (!milestone) {
+      throw new NotFoundException('Milestone not found');
+    }
 
     const isOwner = milestone.project.entrepreneurId === user.id;
     const isAssessor = user.role === UserRole.ASSESSOR;
@@ -394,22 +559,19 @@ export class ProjectsService {
       throw new ForbiddenException('You are not authorized to complete this milestone');
     }
 
-    milestone.status = MilestoneStatus.COMPLETED;
-    milestone.completedAt = new Date();
-    milestone.verifiedBy = user.id;
+    const updated = await this.prisma.milestone.update({
+      where: { id: milestoneId },
+      data: {
+        status: MilestoneStatus.COMPLETED as any,
+        completedAt: new Date(),
+        verifiedBy: user.id,
+      },
+    });
 
-    return this.milestoneRepo.save(milestone);
+    return normalizePrisma(updated);
   }
 
-  // ───────────────────────────────────────────────
-  // Helpers
-  // ───────────────────────────────────────────────
-
   private generateSlug(title: string): string {
-    return title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      + '-' + Date.now().toString(36);
+    return `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}`;
   }
 }

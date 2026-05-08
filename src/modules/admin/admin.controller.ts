@@ -15,7 +15,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagg
 
 import { Roles } from '@common/decorators/roles.decorator';
 import { UserRole } from '@common/enums';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 
 import { AdminService } from './admin.service';
@@ -29,7 +29,7 @@ import { PaginationDto } from '@common/dto/pagination.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 @Controller('admin')
 export class AdminController {
@@ -224,6 +224,17 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'Transaction stats returned' })
   async getTransactionStats() {
     return this.adminService.getTransactionStats();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // KYC CASES
+  // ─────────────────────────────────────────────────────────────
+
+  @Get('kyc-cases')
+  @ApiOperation({ summary: 'List KYC cases (users with pending/rejected KYC)' })
+  @ApiResponse({ status: 200, description: 'KYC cases returned' })
+  async findKycCases(@Query('status') status?: string) {
+    return this.adminService.findKycCases(status as any);
   }
 
   // ─────────────────────────────────────────────────────────────

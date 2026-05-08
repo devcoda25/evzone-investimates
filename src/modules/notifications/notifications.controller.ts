@@ -12,14 +12,14 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 import { CurrentUser } from '@common/decorators/current-user.decorator';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard)
+@UseGuards(UnifiedAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
@@ -42,8 +42,11 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Mark notification as read' })
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
-  async markAsRead(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notificationsService.markAsRead(id);
+  async markAsRead(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.notificationsService.markAsRead(userId, id);
   }
 
   @Patch('read-all')
@@ -64,7 +67,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Delete notification' })
   @ApiResponse({ status: 204, description: 'Notification deleted' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
-  async softDelete(@Param('id', ParseUUIDPipe) id: string) {
-    return this.notificationsService.softDelete(id);
+  async softDelete(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.notificationsService.softDelete(userId, id);
   }
 }

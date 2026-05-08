@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { User } from './entities/user.entity';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { OwnerOrAdminGuard } from '@common/guards/owner-or-admin.guard';
 import { Roles, UserRole } from '@common/decorators/roles.decorator';
@@ -36,7 +36,7 @@ import { PaginatedResponse } from '@common/dto/pagination.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

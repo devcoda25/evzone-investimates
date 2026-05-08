@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InvestmentsService } from './investments.service';
-import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
 import { RolesGuard } from '@common/guards/roles.guard';
 import { Roles, UserRole } from '@common/decorators/roles.decorator';
 import { CurrentUser } from '@common/decorators/current-user.decorator';
@@ -29,7 +29,7 @@ import {
 
 @ApiTags('Investments')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('investments')
 export class InvestmentsController {
   constructor(private readonly investmentsService: InvestmentsService) {}
@@ -179,7 +179,7 @@ export class InvestmentsController {
 
 @ApiTags('Transactions')
 @ApiBearerAuth()
-@UseGuards(OidcAuthGuard, RolesGuard)
+@UseGuards(UnifiedAuthGuard, RolesGuard)
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly investmentsService: InvestmentsService) {}

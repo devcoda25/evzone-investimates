@@ -8,7 +8,7 @@ import { Investment } from '@modules/investments/entities/investment.entity';
 import { Transaction } from '@modules/investments/entities/transaction.entity';
 import { DueDiligenceEngagement } from '@modules/due-diligence/entities/due-diligence-engagement.entity';
 import { AssessorProfile } from '@modules/users/entities/assessor-profile.entity';
-import { UserRole, UserStatus, ComplianceAlertSeverity, ComplianceAlertStatus, DisputeStatus, TransactionStatus } from '@common/enums';
+import { UserRole, UserStatus, ComplianceAlertSeverity, ComplianceAlertStatus, DisputeStatus, TransactionStatus, KycStatus } from '@common/enums';
 
 import { ComplianceAlert } from './entities/compliance-alert.entity';
 import { Dispute } from './entities/dispute.entity';
@@ -57,6 +57,10 @@ export class AdminService {
       alertsBySeverity,
       disputesByStatus,
       engagementsByStatus,
+      flaggedTransactions,
+      openAlerts,
+      activeAssessors,
+      pendingKyc,
     ] = await Promise.all([
       this.getUsersByRole(),
       this.getProjectsByStatus(),
@@ -65,6 +69,10 @@ export class AdminService {
       this.getAlertsBySeverity(),
       this.getDisputesByStatus(),
       this.getEngagementsByStatus(),
+      this.getFlaggedTransactionsCount(),
+      this.getOpenAlertsCount(),
+      this.getActiveAssessorsCount(),
+      this.getPendingKycCount(),
     ]);
 
     return {
@@ -75,6 +83,10 @@ export class AdminService {
       alertsBySeverity,
       disputesByStatus,
       engagementsByStatus,
+      flaggedTransactions,
+      openAlerts,
+      activeAssessors,
+      pendingKyc,
     };
   }
 
@@ -161,6 +173,70 @@ export class AdminService {
     const map: Record<string, number> = {};
     for (const row of result) map[row.status] = parseInt(row.count, 10);
     return map;
+  }
+
+  private async getFlaggedTransactionsCount(): Promise<number> {
+    return this.transactionRepo.count({
+      where: { status: TransactionStatus.FLAGGED },
+    });
+  }
+
+  private async getOpenAlertsCount(): Promise<number> {
+    return this.complianceAlertRepo.count({
+      where: { status: ComplianceAlertStatus.OPEN },
+    });
+  }
+
+  private async getActiveAssessorsCount(): Promise<number> {
+    return this.userRepo.count({
+      where: { role: UserRole.ASSESSOR, status: UserStatus.ACTIVE },
+    });
+  }
+
+  private async getPendingKycCount(): Promise<number> {
+    return this.userRepo.count({
+      where: { kycStatus: KycStatus.PENDING },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // KYC CASES
+  // ─────────────────────────────────────────────────────────────
+
+  async findKycCases(status?: KycStatus): Promise<any[]> {
+    const qb = this.userRepo.createQueryBuilder('user')
+      .leftJoinAndSelect('user.investorProfile', 'investorProfile')
+      .leftJoinAndSelect('user.entrepreneurProfile', 'entrepreneurProfile')
+      .leftJoinAndSelect('user.assessorProfile', 'assessorProfile')
+      .where('user.kycStatus IN (:...statuses)', {
+        statuses: status ? [status] : [KycStatus.PENDING, KycStatus.NOT_STARTED, KycStatus.REJECTED],
+      });
+
+    const users = await qb.orderBy('user.kycSubmittedAt', 'DESC').getMany();
+
+    return users.map((u) => {
+      let company: string | null = null;
+      if (u.entrepreneurProfile) {
+        company = u.entrepreneurProfile.companyName;
+      } else if (u.assessorProfile) {
+        company = u.assessorProfile.organizationName;
+      }
+      return {
+        id: u.id,
+        name: u.fullName,
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        kycStatus: u.kycStatus,
+        kycSubmittedAt: u.kycSubmittedAt,
+        kycVerifiedAt: u.kycVerifiedAt,
+        country: u.country,
+        company,
+        documents: u.preferences?.kycDocuments || null,
+        registeredDate: u.createdAt,
+        lastActive: u.lastLoginAt,
+      };
+    });
   }
 
   // ─────────────────────────────────────────────────────────────

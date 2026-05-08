@@ -2,12 +2,9 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
 import { Request } from 'express';
 import * as bcrypt from 'bcrypt';
-import { RefreshToken } from '@modules/auth/entities/refresh-token.entity';
-import { User } from '@modules/users/entities/user.entity';
+import { PrismaService } from '@database/prisma.service';
 
 interface RefreshJwtPayload {
   sub: string;
@@ -20,10 +17,7 @@ interface RefreshJwtPayload {
 export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh') {
   constructor(
     private readonly configService: ConfigService,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokenRepository: Repository<RefreshToken>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+    private readonly prisma: PrismaService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -65,12 +59,12 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
     }
 
     // Find the stored refresh token record
-    const storedToken = await this.refreshTokenRepository.findOne({
+    const storedToken = await this.prisma.refreshToken.findFirst({
       where: {
         id: payload.jti,
         userId: payload.sub,
-        revokedAt: null as any,
-        expiresAt: MoreThan(new Date()),
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
       },
     });
 
@@ -84,9 +78,13 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
       throw new UnauthorizedException('Refresh token verification failed');
     }
 
-    const user = await this.userRepository.findOne({
+    const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      relations: ['investorProfile', 'entrepreneurProfile', 'assessorProfile'],
+      include: {
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
     });
 
     if (!user) {

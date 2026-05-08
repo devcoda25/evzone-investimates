@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
 
 import { appConfig, databaseConfig, jwtConfig, oidcConfig, redisConfig, smtpConfig } from '@config/index';
-import { DatabaseModule } from '@database/database.module';
+import { PrismaModule } from '@database/prisma.module';
+import { UnifiedAuthGuard } from '@common/guards/unified-auth.guard';
+import { RolesGuard } from '@common/guards/roles.guard';
+import { OwnerOrAdminGuard } from '@common/guards/owner-or-admin.guard';
+import { OidcAuthGuard } from '@common/guards/oidc-auth.guard';
+import { JwtAuthGuard } from '@common/guards/jwt-auth.guard';
+import { JwtRefreshGuard } from '@common/guards/jwt-refresh.guard';
 
 import { AuthModule } from '@modules/auth/auth.module';
 import { UsersModule } from '@modules/users/users.module';
@@ -30,7 +35,7 @@ import { CacheModule } from '@modules/cache/cache.module';
     }),
 
     // Database
-    DatabaseModule,
+    PrismaModule,
 
     // Rate Limiting
     ThrottlerModule.forRoot([{
@@ -58,6 +63,14 @@ import { CacheModule } from '@modules/cache/cache.module';
     NotificationsModule,
     MessagingModule,
     DocumentsModule,
+  ],
+  providers: [
+    UnifiedAuthGuard,
+    RolesGuard,
+    OwnerOrAdminGuard,
+    OidcAuthGuard,
+    JwtAuthGuard,
+    JwtRefreshGuard,
   ],
 })
 export class AppModule {}
