@@ -1,17 +1,24 @@
 FROM node:20-alpine
 
+# Install dependencies for Prisma and native modules
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# Install dependencies (including dev)
-COPY package*.json ./
-RUN npm install && npm cache clean --force
+ENV DATABASE_URL="postgresql://evzone:evzone_secret@localhost:5432/evzone_platform?schema=public"
 
-# Copy source
+# Install dependencies separately to leverage Docker cache
+COPY package*.json ./
+RUN npm install
+
+# Copy source and config
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Generate Prisma Client
+RUN npx prisma generate
 
+# Default port (overridden by services)
 EXPOSE 3000
 
+# We use a default command, but usually override it in docker-compose
 CMD ["npm", "run", "start:dev"]

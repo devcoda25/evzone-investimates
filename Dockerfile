@@ -6,14 +6,14 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+ENV DATABASE_URL="postgresql://evzone:evzone_secret@localhost:5432/evzone_platform?schema=public"
 
-# Copy source
+COPY package*.json ./
+RUN npm ci
+
 COPY . .
 
-# Build
+RUN npx prisma generate
 RUN npm run build
 
 # ============================================================
@@ -23,17 +23,14 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install production dependencies only
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built files
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
-# Create uploads directory
-RUN mkdir -p uploads
-
-# Security: run as non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 && \
     chown -R nodejs:nodejs /app
@@ -41,4 +38,4 @@ USER nodejs
 
 EXPOSE 3000
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/apps/api/src/main.js"]
