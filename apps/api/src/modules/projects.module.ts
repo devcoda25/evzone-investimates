@@ -328,6 +328,11 @@ class ReorderGalleryDto {
   mediaIds!: string[];
 }
 
+class RequestRevisionDto {
+  @IsString()
+  notes!: string;
+}
+
 interface MediaUploadIntentResponse extends SignedUploadIntent {
   mediaAssetId: string;
   status: MediaStatus;
@@ -402,10 +407,11 @@ class ProjectsService {
 
   async findAll(
     filter: ProjectFilterDto,
+    user?: AuthenticatedUser,
   ): Promise<PaginatedResponse<ProjectResponse>> {
     const page = getPage(filter);
     const limit = getLimit(filter);
-    const where = this.buildProjectWhere(filter, false);
+    const where = this.buildProjectWhere(filter, false, user);
     const [data, total] = await Promise.all([
       this.prisma.project.findMany({
         where,
@@ -551,6 +557,45 @@ class ProjectsService {
       user.tenantId,
       "project.rejected",
     );
+    return this.toResponse(updated);
+  }
+
+  async requestRevision(
+    id: string,
+    dto: RequestRevisionDto,
+    user: AuthenticatedUser,
+  ): Promise<ProjectResponse> {
+    const project = await this.prisma.project.findUnique({
+      where: { id },
+      include: { gallery: true, dueDiligence: true },
+    });
+    if (!project || project.deletedAt)
+      throw new NotFoundException("Project not found");
+    if (project.status !== ProjectStatus.UNDER_REVIEW) {
+      throw new BadRequestException(
+        "Can only request revision for projects under review",
+      );
+    }
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.project.update({
+        where: { id },
+        data: {
+          status: ProjectStatus.DRAFT,
+          revisionNotes: dto.notes,
+          revisionRequestedAt: new Date(),
+        },
+        include: { gallery: true, dueDiligence: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: user.tenantId,
+        topic: "project.revision-requested",
+        eventType: "project.revision-requested",
+        aggregateType: "project",
+        aggregateId: id,
+        payload: { projectId: id, notes: dto.notes },
+      });
+      return result;
+    });
     return this.toResponse(updated);
   }
 
@@ -835,6 +880,7 @@ class ProjectsService {
   private buildProjectWhere(
     filter: ProjectFilterDto,
     includePrivate: boolean,
+    user?: AuthenticatedUser,
   ): Prisma.ProjectWhereInput {
     const and: Prisma.ProjectWhereInput[] = [{ deletedAt: null }];
     if (!includePrivate) and.push({ status: { in: this.publicStatuses() } });
@@ -845,6 +891,7 @@ class ProjectsService {
       and.push({ country: { contains: filter.country, mode: "insensitive" } });
     if (filter.entrepreneurId) and.push({ ownerUserId: filter.entrepreneurId });
     if (filter.featured) and.push({ featured: true });
+    if (filter.mine && user) and.push({ ownerUserId: user.id });
     if (filter.search) {
       and.push({
         OR: [
@@ -963,8 +1010,9 @@ class ProjectsController {
   @Get()
   findAll(
     @Query() filter: ProjectFilterDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<PaginatedResponse<ProjectResponse>> {
-    return this.projectsService.findAll(filter);
+    return this.projectsService.findAll(filter, user);
   }
 
   @Public()
@@ -1051,6 +1099,16 @@ class ProjectsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ProjectResponse> {
     return this.projectsService.reject(id, user);
+  }
+
+  @Post(":id/request-revision")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  requestRevision(
+    @Param("id") id: string,
+    @Body() dto: RequestRevisionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ProjectResponse> {
+    return this.projectsService.requestRevision(id, dto, user);
   }
 
   @Post(":id/feature")

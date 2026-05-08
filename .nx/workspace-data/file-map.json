@@ -88,136 +88,296 @@
   "fileMap": {
     "nonProjectFiles": [
       {
-        "file": "libs/database/src/transaction.service.ts",
-        "hash": "11605757712936556739"
+        "file": "libs/storage/src/index.ts",
+        "hash": "9649981994209723782"
       },
       {
-        "file": "src/modules/notifications/dto/send-notification-to-role.dto.ts",
-        "hash": "13917311489428352035"
+        "file": "nx.json",
+        "hash": "8063917653531000690"
       },
       {
-        "file": "libs/redis/src/index.ts",
-        "hash": "12369830170581191635"
+        "file": "prisma/schema.prisma",
+        "hash": "138421388157040213"
       },
       {
-        "file": "libs/redis/src/redis.service.ts",
-        "hash": "12067789686710593869"
+        "file": "libs/common/src/decorators/public.decorator.ts",
+        "hash": "16774912740092046598"
       },
       {
-        "file": ".eslintrc.js",
-        "hash": "5971043449936521572"
-      },
-      {
-        "file": "src/modules/due-diligence/dto/create-engagement.dto.ts",
-        "hash": "9449091676796931229"
-      },
-      {
-        "file": "libs/common/src/interceptors/logging.interceptor.ts",
-        "hash": "4122369813020562953"
-      },
-      {
-        "file": "src/modules/messaging/entities/message.entity.ts",
-        "hash": "1736669444170637408"
-      },
-      {
-        "file": "src/modules/notifications/dto/send-notification-to-user.dto.ts",
-        "hash": "5613907494095038076"
-      },
-      {
-        "file": "test/ledger.spec.ts",
-        "hash": "11674163284385042696"
-      },
-      {
-        "file": "src/modules/messaging/messaging.controller.ts",
-        "hash": "5215925859693784237"
-      },
-      {
-        "file": "libs/audit/src/audit.service.ts",
-        "hash": "6330849248423009680"
+        "file": "libs/events/src/kafka-publisher.service.ts",
+        "hash": "13156668343693718151"
       },
       {
         "file": "src/modules/messaging/providers/africas-talking.provider.ts",
         "hash": "13189144655913459030"
       },
       {
-        "file": "src/modules/messaging/providers/zoho.provider.ts",
-        "hash": "16987544323471843770"
+        "file": "src/config/redis.config.ts",
+        "hash": "12430648220471243507"
+      },
+      {
+        "file": "libs/common/src/types/authenticated-user.ts",
+        "hash": "367708874148778113"
+      },
+      {
+        "file": "libs/auth/src/guards/roles.guard.ts",
+        "hash": "14961554911891298586"
+      },
+      {
+        "file": ".gitignore",
+        "hash": "14745415789942788817"
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "hash": "18026362136583124493"
+      },
+      {
+        "file": "src/modules/messaging/providers/twilio.provider.ts",
+        "hash": "5343765060528466508"
+      },
+      {
+        "file": "SPEC.md",
+        "hash": "2576249073190695533"
+      },
+      {
+        "file": "libs/events/src/outbox.service.ts",
+        "hash": "6703828951943749411"
+      },
+      {
+        "file": "src/modules/notifications/notifications.module.ts",
+        "hash": "13814016363708123447"
       },
       {
         "file": "src/modules/admin/admin.controller.ts",
         "hash": "17134120651130914225"
       },
       {
-        "file": "src/modules/documents/entities/document.entity.ts",
-        "hash": "6814823857348629786"
+        "file": "libs/auth/src/guards/jwt-auth.guard.ts",
+        "hash": "3809574010648111221"
       },
       {
-        "file": "src/modules/users/user.prisma.ts",
-        "hash": "15844319296907847407"
+        "file": "libs/redis/src/redis.service.ts",
+        "hash": "12067789686710593869"
       },
       {
-        "file": "Dockerfile",
-        "hash": "4711595736969472560"
+        "file": "Dockerfile.dev",
+        "hash": "16325950397768025404"
       },
       {
-        "file": "src/modules/notifications/notifications.service.ts",
-        "hash": "14075608243990836817"
+        "file": "prisma/seed.ts",
+        "hash": "8221925648292523459"
       },
       {
-        "file": "src/modules/messaging/dto/send-email.dto.ts",
-        "hash": "18128590168440947737"
+        "file": "src/modules/messaging/messaging.service.ts",
+        "hash": "18276825009436979165"
       },
       {
-        "file": "src/common/guards/oidc-auth.guard.ts",
-        "hash": "16836076083739230166"
+        "file": "libs/redis/src/redis.module.ts",
+        "hash": "2927464661767270220"
+      },
+      {
+        "file": "libs/permissions/src/permissions.service.ts",
+        "hash": "14592709369655525744"
+      },
+      {
+        "file": "libs/common/src/decorators/roles.decorator.ts",
+        "hash": "853202513008207003"
+      },
+      {
+        "file": "src/modules/notifications/entities/notification.entity.ts",
+        "hash": "3764999478071749441"
+      },
+      {
+        "file": "libs/storage/src/types.ts",
+        "hash": "9500369131310406071"
+      },
+      {
+        "file": "libs/permissions/src/index.ts",
+        "hash": "6601620400288028455"
+      },
+      {
+        "file": "src/modules/auth/strategies/jwt-refresh.strategy.ts",
+        "hash": "124637159409299598"
       },
       {
         "file": "src/modules/documents/documents.controller.ts",
         "hash": "12842199399974919599"
       },
       {
-        "file": "libs/audit/src/types.ts",
-        "hash": "5564110370663842191"
+        "file": "libs/redis/src/index.ts",
+        "hash": "12369830170581191635"
+      },
+      {
+        "file": "src/database/prisma.module.ts",
+        "hash": "10238961258611182846"
+      },
+      {
+        "file": "prisma/migrations/migration_lock.toml",
+        "hash": "1165361590754720112"
+      },
+      {
+        "file": "libs/audit/src/audit.module.ts",
+        "hash": "4543817517596924776"
       },
       {
         "file": "libs/storage/src/storage.service.ts",
         "hash": "12867188311007485141"
       },
       {
-        "file": "package.json",
-        "hash": "14526567683048085829"
+        "file": "src/modules/messaging/messaging.module.ts",
+        "hash": "2909638609857128338"
       },
       {
-        "file": "API_ENDPOINT_MAP.md",
-        "hash": "13768142553627044220"
+        "file": "src/modules/messages/dto/send-message.dto.ts",
+        "hash": "16449215999121222697"
       },
       {
-        "file": "src/modules/users/users.controller.ts",
-        "hash": "6826124296140928723"
+        "file": "src/modules/cache/cache.module.ts",
+        "hash": "18290892650780990779"
       },
       {
-        "file": "libs/events/src/events.module.ts",
-        "hash": "16799883423152110326"
-      },
-      {
-        "file": "src/config/smtp.config.ts",
-        "hash": "14317033495611119451"
+        "file": "libs/events/src/types.ts",
+        "hash": "9768048462767405680"
       },
       {
         "file": "libs/common/src/filters/all-exceptions.filter.ts",
         "hash": "7928185421051316896"
       },
       {
+        "file": "src/modules/messaging/dto/send-email.dto.ts",
+        "hash": "18128590168440947737"
+      },
+      {
+        "file": "src/modules/due-diligence/dto/create-engagement.dto.ts",
+        "hash": "9449091676796931229"
+      },
+      {
+        "file": "src/modules/messaging/dto/send-sms.dto.ts",
+        "hash": "2164939983684340699"
+      },
+      {
+        "file": "libs/common/src/interceptors/transform.interceptor.ts",
+        "hash": "10164644194730639842"
+      },
+      {
+        "file": "libs/database/src/prisma.module.ts",
+        "hash": "13117741949310046758"
+      },
+      {
+        "file": "src/modules/messaging/providers/zoho.provider.ts",
+        "hash": "16987544323471843770"
+      },
+      {
+        "file": "src/modules/messaging/providers/submail-email.provider.ts",
+        "hash": "11694156783356062486"
+      },
+      {
+        "file": "package.json",
+        "hash": "14526567683048085829"
+      },
+      {
+        "file": "src/common/guards/unified-auth.guard.ts",
+        "hash": "12672667083607702919"
+      },
+      {
+        "file": "src/modules/notifications/dto/send-notification-to-role.dto.ts",
+        "hash": "13917311489428352035"
+      },
+      {
+        "file": "libs/auth/src/guards/owner-or-admin.guard.ts",
+        "hash": "17600700979269018252"
+      },
+      {
+        "file": ".dockerignore",
+        "hash": "15714212292767503937"
+      },
+      {
+        "file": ".eslintrc.js",
+        "hash": "5971043449936521572"
+      },
+      {
+        "file": "libs/audit/src/audit.service.ts",
+        "hash": "6330849248423009680"
+      },
+      {
+        "file": "test/ledger.spec.ts",
+        "hash": "11674163284385042696"
+      },
+      {
+        "file": "libs/events/src/events.module.ts",
+        "hash": "16799883423152110326"
+      },
+      {
+        "file": "package-lock.json",
+        "hash": "17928832747952749460"
+      },
+      {
+        "file": "src/modules/messages/dto/mark-as-read.dto.ts",
+        "hash": "7402324931679156008"
+      },
+      {
         "file": "libs/common/src/decorators/current-user.decorator.ts",
         "hash": "8390728445910959233"
       },
       {
-        "file": "src/modules/investments/investments.service.ts",
-        "hash": "17149373264701614579"
+        "file": "README.md",
+        "hash": "14918980435823346612"
       },
       {
-        "file": "src/modules/notifications/notifications.controller.ts",
-        "hash": "2741718339528855766"
+        "file": "src/common/guards/oidc-auth.guard.ts",
+        "hash": "16836076083739230166"
+      },
+      {
+        "file": "src/modules/messages/messages.service.ts",
+        "hash": "13382940137970266967"
+      },
+      {
+        "file": "src/modules/cache/cache.service.ts",
+        "hash": "8733623178637298359"
+      },
+      {
+        "file": "src/modules/mail/mail.service.ts",
+        "hash": "16530181187105023793"
+      },
+      {
+        "file": "src/modules/auth/strategies/jwt.strategy.ts",
+        "hash": "4752423946314117398"
+      },
+      {
+        "file": "src/database/prisma.service.ts",
+        "hash": "439416013922989706"
+      },
+      {
+        "file": "src/modules/messaging/messaging.controller.ts",
+        "hash": "5215925859693784237"
+      },
+      {
+        "file": "src/database/prisma.helpers.ts",
+        "hash": "2779850470718764455"
+      },
+      {
+        "file": "src/database/seeder/main.seeder.ts",
+        "hash": "2537618054217857830"
+      },
+      {
+        "file": "libs/auth/src/types/jwt-payload.ts",
+        "hash": "13576906910680729733"
+      },
+      {
+        "file": "libs/database/src/transaction.service.ts",
+        "hash": "11605757712936556739"
+      },
+      {
+        "file": "src/modules/messaging/providers/sendgrid.provider.ts",
+        "hash": "18316496591948195885"
+      },
+      {
+        "file": "libs/storage/src/storage.module.ts",
+        "hash": "13914770240335613845"
+      },
+      {
+        "file": "src/config/smtp.config.ts",
+        "hash": "14317033495611119451"
       },
       {
         "file": "docker-compose.yml",
@@ -228,364 +388,204 @@
         "hash": "1852101948178636658"
       },
       {
-        "file": "libs/common/src/decorators/roles.decorator.ts",
-        "hash": "853202513008207003"
-      },
-      {
-        "file": "src/modules/messaging/messaging.module.ts",
-        "hash": "2909638609857128338"
-      },
-      {
-        "file": "src/modules/investments/investments.controller.ts",
-        "hash": "15108816709211524275"
-      },
-      {
-        "file": "libs/auth/src/types/jwt-payload.ts",
-        "hash": "13576906910680729733"
-      },
-      {
-        "file": "src/common/guards/jwt-refresh.guard.ts",
-        "hash": "17804610334621346270"
-      },
-      {
-        "file": "nx.json",
-        "hash": "8063917653531000690"
-      },
-      {
         "file": "src/modules/messages/messages.controller.ts",
         "hash": "11643585290167320876"
-      },
-      {
-        "file": "libs/auth/src/guards/roles.guard.ts",
-        "hash": "14961554911891298586"
-      },
-      {
-        "file": "src/database/seeder/main.seeder.ts",
-        "hash": "2537618054217857830"
-      },
-      {
-        "file": "libs/events/src/outbox.service.ts",
-        "hash": "6703828951943749411"
-      },
-      {
-        "file": "libs/redis/src/redis.module.ts",
-        "hash": "2927464661767270220"
-      },
-      {
-        "file": "SPEC.md",
-        "hash": "2576249073190695533"
-      },
-      {
-        "file": "src/modules/auth/strategies/jwt-refresh.strategy.ts",
-        "hash": "124637159409299598"
-      },
-      {
-        "file": "prisma/migrations/migration_lock.toml",
-        "hash": "1165361590754720112"
-      },
-      {
-        "file": "libs/common/src/decorators/public.decorator.ts",
-        "hash": "16774912740092046598"
-      },
-      {
-        "file": "src/modules/notifications/entities/notification.entity.ts",
-        "hash": "3764999478071749441"
-      },
-      {
-        "file": "src/modules/messages/messages.module.ts",
-        "hash": "6511061552062806344"
-      },
-      {
-        "file": "src/app.module.ts",
-        "hash": "14805657596069399847"
-      },
-      {
-        "file": ".env.example",
-        "hash": "15433961216737866237"
-      },
-      {
-        "file": "libs/auth/src/guards/owner-or-admin.guard.ts",
-        "hash": "17600700979269018252"
-      },
-      {
-        "file": "README.md",
-        "hash": "14918980435823346612"
-      },
-      {
-        "file": "libs/events/src/types.ts",
-        "hash": "9768048462767405680"
-      },
-      {
-        "file": ".dockerignore",
-        "hash": "15714212292767503937"
-      },
-      {
-        "file": "src/modules/due-diligence/due-diligence.service.ts",
-        "hash": "12324761752636793992"
-      },
-      {
-        "file": "prisma/migrations/20260508150000_init/migration.sql",
-        "hash": "14481014347389118678"
-      },
-      {
-        "file": "libs/config/src/env.ts",
-        "hash": "2734132582518280781"
-      },
-      {
-        "file": "libs/storage/src/types.ts",
-        "hash": "9500369131310406071"
-      },
-      {
-        "file": "src/modules/messages/dto/send-message.dto.ts",
-        "hash": "16449215999121222697"
-      },
-      {
-        "file": "src/modules/notifications/notifications.module.ts",
-        "hash": "13814016363708123447"
-      },
-      {
-        "file": "libs/storage/src/storage.module.ts",
-        "hash": "13914770240335613845"
-      },
-      {
-        "file": "libs/auth/src/guards/jwt-auth.guard.ts",
-        "hash": "3809574010648111221"
-      },
-      {
-        "file": "src/modules/users/users.service.ts",
-        "hash": "4504049715046814009"
-      },
-      {
-        "file": "libs/common/src/ledger/balanced-ledger.ts",
-        "hash": "14617230744445731981"
-      },
-      {
-        "file": "src/config/index.ts",
-        "hash": "8025479574690166241"
-      },
-      {
-        "file": "libs/permissions/src/permissions.service.ts",
-        "hash": "14592709369655525744"
-      },
-      {
-        "file": "src/modules/cache/cache.service.ts",
-        "hash": "8733623178637298359"
-      },
-      {
-        "file": "src/modules/auth/auth.controller.ts",
-        "hash": "7097426912275551637"
-      },
-      {
-        "file": "src/modules/projects/projects.service.ts",
-        "hash": "8266456376137747827"
-      },
-      {
-        "file": "prisma/seed.ts",
-        "hash": "8221925648292523459"
-      },
-      {
-        "file": "Dockerfile.dev",
-        "hash": "16325950397768025404"
-      },
-      {
-        "file": "libs/common/src/index.ts",
-        "hash": "16058796740050240395"
-      },
-      {
-        "file": "src/modules/due-diligence/entities/due-diligence-engagement.entity.ts",
-        "hash": "15607165827987294726"
-      },
-      {
-        "file": "libs/events/src/kafka-publisher.service.ts",
-        "hash": "13156668343693718151"
-      },
-      {
-        "file": "src/modules/messaging/messaging.service.ts",
-        "hash": "18276825009436979165"
-      },
-      {
-        "file": "src/modules/messaging/providers/sendgrid.provider.ts",
-        "hash": "18316496591948195885"
-      },
-      {
-        "file": "src/modules/documents/documents.service.ts",
-        "hash": "16611405785365906560"
-      },
-      {
-        "file": "src/modules/auth/strategies/jwt.strategy.ts",
-        "hash": "4752423946314117398"
-      },
-      {
-        "file": "src/modules/auth/auth.service.ts",
-        "hash": "18026362136583124493"
-      },
-      {
-        "file": "src/modules/cache/cache.module.ts",
-        "hash": "18290892650780990779"
-      },
-      {
-        "file": "src/modules/messaging/providers/submail-sms.provider.ts",
-        "hash": "9443345727730210690"
-      },
-      {
-        "file": "src/modules/messaging/providers/submail-email.provider.ts",
-        "hash": "11694156783356062486"
       },
       {
         "file": "tsconfig.json",
         "hash": "7374053253942369616"
       },
       {
-        "file": "src/modules/mail/mail.service.ts",
-        "hash": "16530181187105023793"
-      },
-      {
-        "file": "libs/database/src/prisma.module.ts",
-        "hash": "13117741949310046758"
-      },
-      {
-        "file": "src/database/prisma.module.ts",
-        "hash": "10238961258611182846"
-      },
-      {
-        "file": "libs/common/src/dto/pagination.dto.ts",
-        "hash": "12459356043019770537"
-      },
-      {
-        "file": "src/modules/messaging/providers/email.service.ts",
-        "hash": "5501232617578850468"
-      },
-      {
-        "file": "libs/database/src/prisma.service.ts",
-        "hash": "12391704424958316142"
-      },
-      {
-        "file": "libs/common/src/interceptors/transform.interceptor.ts",
-        "hash": "10164644194730639842"
-      },
-      {
-        "file": "src/modules/messages/dto/mark-as-read.dto.ts",
-        "hash": "7402324931679156008"
-      },
-      {
-        "file": "libs/audit/src/audit.module.ts",
-        "hash": "4543817517596924776"
-      },
-      {
-        "file": "libs/permissions/src/index.ts",
-        "hash": "6601620400288028455"
-      },
-      {
-        "file": "libs/config/src/index.ts",
-        "hash": "8190358912982774776"
-      },
-      {
-        "file": "src/modules/due-diligence/dto/engagement-filter.dto.ts",
-        "hash": "1122895066345574730"
-      },
-      {
-        "file": "libs/database/src/index.ts",
-        "hash": "13730559850348780219"
+        "file": "src/modules/documents/entities/document.entity.ts",
+        "hash": "6814823857348629786"
       },
       {
         "file": "libs/common/src/types/json.ts",
         "hash": "11388053552045774081"
       },
       {
-        "file": "src/main.ts",
-        "hash": "846157213294597994"
-      },
-      {
-        "file": "libs/permissions/src/permissions.module.ts",
-        "hash": "12183143113285149052"
-      },
-      {
-        "file": "src/modules/projects/projects.controller.ts",
-        "hash": "14758687415797675238"
-      },
-      {
-        "file": "src/config/redis.config.ts",
-        "hash": "12430648220471243507"
-      },
-      {
-        "file": "libs/storage/src/index.ts",
-        "hash": "9649981994209723782"
-      },
-      {
-        "file": "src/modules/messaging/dto/send-sms.dto.ts",
-        "hash": "2164939983684340699"
-      },
-      {
-        "file": "libs/audit/src/index.ts",
-        "hash": "15240072984098531731"
-      },
-      {
-        "file": "src/modules/messaging/providers/sms.service.ts",
-        "hash": "4746367139928896607"
-      },
-      {
-        "file": "src/modules/auth/auth.module.ts",
-        "hash": "18060581593145919841"
-      },
-      {
-        "file": "src/modules/messages/messages.service.ts",
-        "hash": "13382940137970266967"
-      },
-      {
-        "file": "src/modules/mail/mail.module.ts",
-        "hash": "18415594243593659044"
-      },
-      {
-        "file": "libs/config/src/configuration.ts",
-        "hash": "1157102964033813947"
-      },
-      {
-        "file": "prisma/schema.prisma",
-        "hash": "18054827319698865685"
-      },
-      {
-        "file": "libs/events/src/index.ts",
-        "hash": "3894474925867271139"
-      },
-      {
-        "file": "libs/common/src/types/authenticated-user.ts",
-        "hash": "367708874148778113"
-      },
-      {
-        "file": "src/modules/admin/admin.service.ts",
-        "hash": "1988074212781311745"
-      },
-      {
-        "file": "src/modules/messaging/providers/twilio.provider.ts",
-        "hash": "5343765060528466508"
-      },
-      {
-        "file": "src/modules/due-diligence/due-diligence.controller.ts",
-        "hash": "266214405007333549"
+        "file": "libs/database/src/index.ts",
+        "hash": "13730559850348780219"
       },
       {
         "file": "src/modules/messages/dto/get-conversations.dto.ts",
         "hash": "2434694496660752951"
       },
       {
-        "file": "src/common/guards/unified-auth.guard.ts",
-        "hash": "12672667083607702919"
+        "file": "src/modules/auth/auth.controller.ts",
+        "hash": "7097426912275551637"
       },
       {
-        "file": "src/database/prisma.service.ts",
-        "hash": "439416013922989706"
+        "file": "prisma/migrations/20260508150000_init/migration.sql",
+        "hash": "14481014347389118678"
       },
       {
-        "file": ".gitignore",
-        "hash": "14745415789942788817"
+        "file": "libs/permissions/src/permissions.module.ts",
+        "hash": "12183143113285149052"
       },
       {
-        "file": "src/database/prisma.helpers.ts",
-        "hash": "2779850470718764455"
+        "file": "src/modules/due-diligence/dto/engagement-filter.dto.ts",
+        "hash": "1122895066345574730"
       },
       {
-        "file": "package-lock.json",
-        "hash": "17928832747952749460"
+        "file": "src/modules/notifications/notifications.service.ts",
+        "hash": "14075608243990836817"
+      },
+      {
+        "file": "src/modules/admin/admin.service.ts",
+        "hash": "1988074212781311745"
+      },
+      {
+        "file": "src/modules/messaging/providers/sms.service.ts",
+        "hash": "4746367139928896607"
+      },
+      {
+        "file": "src/modules/messaging/entities/message.entity.ts",
+        "hash": "1736669444170637408"
+      },
+      {
+        "file": "libs/common/src/index.ts",
+        "hash": "16058796740050240395"
+      },
+      {
+        "file": ".env.example",
+        "hash": "15433961216737866237"
+      },
+      {
+        "file": "src/modules/users/users.service.ts",
+        "hash": "4504049715046814009"
+      },
+      {
+        "file": "src/modules/projects/projects.controller.ts",
+        "hash": "14758687415797675238"
+      },
+      {
+        "file": "libs/common/src/ledger/balanced-ledger.ts",
+        "hash": "14617230744445731981"
+      },
+      {
+        "file": "src/modules/investments/investments.service.ts",
+        "hash": "17149373264701614579"
+      },
+      {
+        "file": "libs/audit/src/index.ts",
+        "hash": "15240072984098531731"
+      },
+      {
+        "file": "src/modules/documents/documents.service.ts",
+        "hash": "16611405785365906560"
+      },
+      {
+        "file": "src/modules/due-diligence/due-diligence.service.ts",
+        "hash": "12324761752636793992"
+      },
+      {
+        "file": "API_ENDPOINT_MAP.md",
+        "hash": "13768142553627044220"
+      },
+      {
+        "file": "src/modules/messaging/providers/email.service.ts",
+        "hash": "5501232617578850468"
+      },
+      {
+        "file": "src/modules/auth/auth.module.ts",
+        "hash": "18060581593145919841"
+      },
+      {
+        "file": "libs/config/src/env.ts",
+        "hash": "2734132582518280781"
+      },
+      {
+        "file": "libs/audit/src/types.ts",
+        "hash": "5564110370663842191"
+      },
+      {
+        "file": "src/modules/messages/messages.module.ts",
+        "hash": "6511061552062806344"
+      },
+      {
+        "file": "src/main.ts",
+        "hash": "846157213294597994"
+      },
+      {
+        "file": "libs/events/src/index.ts",
+        "hash": "3894474925867271139"
+      },
+      {
+        "file": "src/modules/users/users.controller.ts",
+        "hash": "6826124296140928723"
+      },
+      {
+        "file": "src/modules/investments/investments.controller.ts",
+        "hash": "15108816709211524275"
+      },
+      {
+        "file": "libs/database/src/prisma.service.ts",
+        "hash": "12391704424958316142"
+      },
+      {
+        "file": "src/modules/users/user.prisma.ts",
+        "hash": "15844319296907847407"
+      },
+      {
+        "file": "Dockerfile",
+        "hash": "4711595736969472560"
+      },
+      {
+        "file": "src/modules/due-diligence/due-diligence.controller.ts",
+        "hash": "266214405007333549"
+      },
+      {
+        "file": "src/modules/due-diligence/entities/due-diligence-engagement.entity.ts",
+        "hash": "15607165827987294726"
+      },
+      {
+        "file": "libs/config/src/configuration.ts",
+        "hash": "1157102964033813947"
+      },
+      {
+        "file": "src/modules/notifications/dto/send-notification-to-user.dto.ts",
+        "hash": "5613907494095038076"
+      },
+      {
+        "file": "src/app.module.ts",
+        "hash": "14805657596069399847"
+      },
+      {
+        "file": "src/modules/messaging/providers/submail-sms.provider.ts",
+        "hash": "9443345727730210690"
+      },
+      {
+        "file": "libs/config/src/index.ts",
+        "hash": "8190358912982774776"
+      },
+      {
+        "file": "src/config/index.ts",
+        "hash": "8025479574690166241"
+      },
+      {
+        "file": "libs/common/src/dto/pagination.dto.ts",
+        "hash": "12459356043019770537"
+      },
+      {
+        "file": "src/modules/projects/projects.service.ts",
+        "hash": "8266456376137747827"
+      },
+      {
+        "file": "src/modules/notifications/notifications.controller.ts",
+        "hash": "2741718339528855766"
+      },
+      {
+        "file": "libs/common/src/interceptors/logging.interceptor.ts",
+        "hash": "4122369813020562953"
+      },
+      {
+        "file": "src/common/guards/jwt-refresh.guard.ts",
+        "hash": "17804610334621346270"
+      },
+      {
+        "file": "src/modules/mail/mail.module.ts",
+        "hash": "18415594243593659044"
       }
     ],
     "projectFileMap": {
@@ -654,7 +654,7 @@
         },
         {
           "file": "apps/api/src/modules/documents.module.ts",
-          "hash": "17307952905323129622"
+          "hash": "956339185467398657"
         },
         {
           "file": "apps/api/src/modules/due-diligence.module.ts",
@@ -674,11 +674,11 @@
         },
         {
           "file": "apps/api/src/modules/projects.module.ts",
-          "hash": "8576021598675887640"
+          "hash": "6566207907502255720"
         },
         {
           "file": "apps/api/src/modules/users.module.ts",
-          "hash": "4810225338216988332"
+          "hash": "11179673921452100976"
         },
         {
           "file": "apps/api/tsconfig.app.json",

@@ -15,8 +15,8 @@ import {
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEmail, IsEnum, IsOptional, IsString } from "class-validator";
-import { KycStatus, PlatformRole, Prisma, UserStatus } from "@prisma/client";
+import { IsEmail, IsEnum, IsInt, IsOptional, IsString } from "class-validator";
+import { EntrepreneurStage, KycStatus, PlatformRole, Prisma, UserStatus } from "@prisma/client";
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -148,6 +148,40 @@ class VerifyKycDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
+
+class UpdateEntrepreneurProfileDto {
+  @IsOptional()
+  @IsString()
+  companyName?: string;
+
+  @IsOptional()
+  @IsString()
+  companyRegistration?: string;
+
+  @IsOptional()
+  @IsString()
+  companyWebsite?: string;
+
+  @IsOptional()
+  @IsString()
+  industry?: string;
+
+  @IsOptional()
+  @IsInt()
+  foundedYear?: number;
+
+  @IsOptional()
+  @IsInt()
+  teamSize?: number;
+
+  @IsOptional()
+  @IsEnum(EntrepreneurStage)
+  stage?: EntrepreneurStage;
+
+  @IsOptional()
+  @IsString()
+  pitchDeck?: string;
 }
 
 interface UserStatsResponse {
@@ -404,6 +438,48 @@ class UsersService {
     return this.toResponse(updated);
   }
 
+  async updateEntrepreneurProfile(
+    id: string,
+    dto: UpdateEntrepreneurProfileDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    await this.findById(id, currentUser);
+    await this.prisma.entrepreneurProfile.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        companyName: dto.companyName ?? "",
+        companyRegistration: dto.companyRegistration,
+        companyWebsite: dto.companyWebsite,
+        industry: dto.industry ?? "",
+        foundedYear: dto.foundedYear,
+        teamSize: dto.teamSize,
+        stage: dto.stage,
+        pitchDeck: dto.pitchDeck,
+      },
+      update: {
+        companyName: dto.companyName,
+        companyRegistration: dto.companyRegistration,
+        companyWebsite: dto.companyWebsite,
+        industry: dto.industry,
+        foundedYear: dto.foundedYear,
+        teamSize: dto.teamSize,
+        stage: dto.stage,
+        pitchDeck: dto.pitchDeck,
+      },
+    });
+    const updated = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+    return this.toResponse(updated!);
+  }
+
   private buildUserWhere(
     filter: UserFilterDto,
     currentUser: AuthenticatedUser,
@@ -600,6 +676,15 @@ class UsersController {
         ? (preferences.kycDocuments ?? null)
         : null;
     return { kycStatus: found.kycStatus, documents };
+  }
+
+  @Patch(":id/entrepreneur-profile")
+  updateEntrepreneurProfile(
+    @Param("id") id: string,
+    @Body() dto: UpdateEntrepreneurProfileDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    return this.usersService.updateEntrepreneurProfile(id, dto, user);
   }
 }
 
