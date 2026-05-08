@@ -1,0 +1,23 @@
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.253Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.265Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.270Z - Established a connection. Number of open connections: 1
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.272Z - Established a connection. Number of open connections: 2
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.278Z - Closed a connection. Number of open connections: 1
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.283Z - [REQUEST]: Responding to the client. Shutdown initiated
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.285Z - Done responding to the client Shutdown initiated
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.286Z - Handled FORCE_SHUTDOWN. Handling time: 0. Response time: 4.
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.286Z - Closed a connection. Number of open connections: 0
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.287Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.287Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.290Z - Server stopped because: "Request to shutdown"
+[NX Daemon Server] - 2026-05-08T13:48:34.635Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX Daemon Server] - 2026-05-08T13:48:34.647Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX Daemon Server] - 2026-05-08T13:48:34.654Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:48:34.658Z - Established a connection. Number of open connections: 2
+[NX Daemon Server] - 2026-05-08T13:48:34.662Z - Closed a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:48:34.666Z - [REQUEST]: Responding to the client. Shutdown initiated
+[NX Daemon Server] - 2026-05-08T13:48:34.669Z - Done responding to the client Shutdown initiated
+[NX Daemon Server] - 2026-05-08T13:48:34.669Z - Handled FORCE_SHUTDOWN. Handling time: 1. Response time: 3.
+[NX Daemon Server] - 2026-05-08T13:48:34.670Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T13:48:34.672Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX Daemon Server] - 2026-05-08T13:48:34.673Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)

@@ -1,62 +1,18 @@
 {
   "run": {
-    "command": "nx run-many -t build --projects=api,worker-events,worker-media,worker-compliance,scheduler",
-    "startTime": "2026-05-08T12:45:56.208Z",
-    "endTime": "2026-05-08T12:46:31.411Z",
+    "command": "nx build api",
+    "startTime": "2026-05-08T13:54:49.101Z",
+    "endTime": "2026-05-08T13:54:53.690Z",
     "inner": false
   },
   "tasks": [
     {
-      "taskId": "worker-media:build",
-      "target": "build",
-      "projectName": "worker-media",
-      "hash": "14100042110976839866",
-      "startTime": "2026-05-08T12:45:56.265Z",
-      "endTime": "2026-05-08T12:46:08.999Z",
-      "params": "",
-      "cacheStatus": "cache-miss",
-      "status": 0
-    },
-    {
-      "taskId": "scheduler:build",
-      "target": "build",
-      "projectName": "scheduler",
-      "hash": "12042294911071988635",
-      "startTime": "2026-05-08T12:45:56.265Z",
-      "endTime": "2026-05-08T12:46:10.029Z",
-      "params": "",
-      "cacheStatus": "cache-miss",
-      "status": 0
-    },
-    {
       "taskId": "api:build",
       "target": "build",
       "projectName": "api",
-      "hash": "7763838741098550019",
-      "startTime": "2026-05-08T12:45:56.265Z",
-      "endTime": "2026-05-08T12:46:11.572Z",
-      "params": "",
-      "cacheStatus": "cache-miss",
-      "status": 0
-    },
-    {
-      "taskId": "worker-events:build",
-      "target": "build",
-      "projectName": "worker-events",
-      "hash": "9489205214169714943",
-      "startTime": "2026-05-08T12:46:09.193Z",
-      "endTime": "2026-05-08T12:46:30.659Z",
-      "params": "",
-      "cacheStatus": "cache-miss",
-      "status": 0
-    },
-    {
-      "taskId": "worker-compliance:build",
-      "target": "build",
-      "projectName": "worker-compliance",
-      "hash": "1987354762749059881",
-      "startTime": "2026-05-08T12:46:10.301Z",
-      "endTime": "2026-05-08T12:46:31.105Z",
+      "hash": "13336275097830532123",
+      "startTime": "2026-05-08T13:54:49.117Z",
+      "endTime": "2026-05-08T13:54:53.690Z",
       "params": "",
       "cacheStatus": "cache-miss",
       "status": 0
