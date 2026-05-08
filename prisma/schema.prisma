@@ -38,6 +38,13 @@ enum MembershipStatus {
   REMOVED
 }
 
+enum UserRole {
+  INVESTOR
+  ENTREPRENEUR
+  ASSESSOR
+  ADMIN
+}
+
 enum UserStatus {
   ACTIVE
   SUSPENDED
@@ -88,6 +95,17 @@ enum AssessorAvailability {
 }
 
 enum GreenSector {
+  SOLAR
+  WIND
+  HYDRO
+  BIOMASS
+  EV_CHARGING
+  GREEN_HYDROGEN
+  ENERGY_STORAGE
+  OTHER
+}
+
+enum ProjectSector {
   SOLAR
   WIND
   HYDRO
