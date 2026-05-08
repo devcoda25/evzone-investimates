@@ -1,0 +1,288 @@
+{
+  "apps/api": {
+    "root": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.executor": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.options": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.options.command": [
+      "apps/api/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/scheduler": {
+    "root": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/scheduler/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/worker-compliance": {
+    "root": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/worker-compliance/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/worker-events": {
+    "root": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/worker-events/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/worker-media": {
+    "root": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/worker-media/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  }
+}
