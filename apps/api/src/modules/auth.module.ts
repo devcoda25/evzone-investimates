@@ -12,6 +12,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
+import { Throttle } from "@nestjs/throttler";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   IsEmail,
@@ -210,17 +211,36 @@ class AuthService {
     ) {
       throw new UnauthorizedException("Account is not active");
     }
+    if (user.lockoutUntil && user.lockoutUntil > new Date()) {
+      throw new UnauthorizedException(
+        `Account locked. Try again after ${user.lockoutUntil.toISOString()}`,
+      );
+    }
 
     const validPassword = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!validPassword)
+    if (!validPassword) {
+      const loginAttempts = user.loginAttempts + 1;
+      const lockoutUntil =
+        loginAttempts >= 5
+          ? new Date(Date.now() + 15 * 60 * 1000)
+          : user.lockoutUntil;
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { loginAttempts, lockoutUntil },
+      });
       throw new UnauthorizedException("Invalid email or password");
+    }
     const membership = user.memberships[0];
     if (!membership)
       throw new UnauthorizedException("User has no active tenant membership");
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date(), loginAttempts: 0 },
+      data: {
+        lastLoginAt: new Date(),
+        loginAttempts: 0,
+        lockoutUntil: null,
+      },
     });
     return this.issueTokens(user.id, membership.tenantId, membership.role);
   }
@@ -286,6 +306,14 @@ class AuthService {
       data: { revokedAt: new Date() },
     });
     return { message: "Logged out successfully" };
+  }
+
+  async logoutAll(userId: string): Promise<{ message: string }> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { message: "Logged out from all devices successfully" };
   }
 
   async changePassword(
@@ -497,6 +525,7 @@ class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post("register")
   @ApiOperation({ summary: "Register a new account" })
   register(@Body() dto: RegisterDto): Promise<AuthTokenResponse> {
@@ -504,6 +533,7 @@ class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post("login")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Login with email and password" })
@@ -512,6 +542,7 @@ class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
   refresh(@Body() dto: RefreshDto): Promise<AuthTokenResponse> {
@@ -532,6 +563,14 @@ class AuthController {
   }
 
   @ApiBearerAuth()
+  @Post("logout-all")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Logout from all devices" })
+  logoutAll(@CurrentUser("id") userId: string): Promise<{ message: string }> {
+    return this.authService.logoutAll(userId);
+  }
+
+  @ApiBearerAuth()
   @Post("change-password")
   @HttpCode(HttpStatus.OK)
   changePassword(
@@ -542,6 +581,7 @@ class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post("forgot-password")
   @HttpCode(HttpStatus.OK)
   forgotPassword(
@@ -551,6 +591,7 @@ class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post("reset-password")
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {

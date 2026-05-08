@@ -655,7 +655,13 @@ class AdminService {
         kycStatus: u.kycStatus,
         country: u.countryCode,
         company,
-        documents: (u.preferences as Record<string, any>)?.kycDocuments || null,
+        documents:
+          u.preferences &&
+          typeof u.preferences === "object" &&
+          !Array.isArray(u.preferences) &&
+          "kycDocuments" in u.preferences
+            ? (u.preferences as Record<string, unknown>).kycDocuments
+            : null,
         registeredDate: u.createdAt,
         lastActive: u.lastLoginAt,
       };
