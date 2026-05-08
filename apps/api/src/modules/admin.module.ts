@@ -21,6 +21,7 @@ import {
   DisputeStatus,
   DisputeType,
   KycStatus,
+  MembershipStatus,
   PlatformRole,
   Prisma,
   RiskRating,
@@ -130,6 +131,10 @@ class AdminService {
       alertsBySeverity,
       disputesByStatus,
       engagementsByStatus,
+      flaggedTransactions,
+      openAlerts,
+      activeAssessors,
+      pendingKyc,
     ] = await Promise.all([
       this.prisma.userTenantMembership.groupBy({
         by: ["role"],
@@ -168,6 +173,10 @@ class AdminService {
         where: tenantWhere,
         _count: { status: true },
       }),
+      this.getFlaggedTransactionsCount(user),
+      this.getOpenAlertsCount(user),
+      this.getActiveAssessorsCount(user),
+      this.getPendingKycCount(),
     ]);
     return {
       usersByRole: Object.fromEntries(
@@ -193,7 +202,43 @@ class AdminService {
       engagementsByStatus: Object.fromEntries(
         engagementsByStatus.map((row) => [row.status, row._count.status]),
       ),
+      flaggedTransactions,
+      openAlerts,
+      activeAssessors,
+      pendingKyc,
     };
+  }
+
+  private async getFlaggedTransactionsCount(user: AuthenticatedUser): Promise<number> {
+    const where = this.permissions.isPlatformAdmin(user)
+      ? { status: TransactionStatus.FLAGGED }
+      : { tenantId: user.tenantId, status: TransactionStatus.FLAGGED };
+    return this.prisma.transaction.count({ where });
+  }
+
+  private async getOpenAlertsCount(user: AuthenticatedUser): Promise<number> {
+    const where = this.permissions.isPlatformAdmin(user)
+      ? { status: ComplianceAlertStatus.OPEN }
+      : { tenantId: user.tenantId, status: ComplianceAlertStatus.OPEN };
+    return this.prisma.complianceAlert.count({ where });
+  }
+
+  private async getActiveAssessorsCount(user: AuthenticatedUser): Promise<number> {
+    return this.prisma.userTenantMembership.count({
+      where: {
+        tenantId: user.tenantId,
+        role: PlatformRole.ASSESSOR,
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+  }
+
+  private async getPendingKycCount(): Promise<number> {
+    return this.prisma.user.count({
+      where: {
+        kycStatus: KycStatus.PENDING,
+      },
+    });
   }
 
   async findAlerts(
@@ -562,6 +607,46 @@ class AdminService {
       take: 50,
     });
   }
+
+  async findKycCases(
+    user: AuthenticatedUser,
+    status?: KycStatus,
+  ): Promise<unknown[]> {
+    const users = await this.prisma.user.findMany({
+      where: {
+        kycStatus: status
+          ? status
+          : { in: [KycStatus.PENDING, KycStatus.NOT_STARTED, KycStatus.REJECTED] },
+      },
+      include: {
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return users.map((u) => {
+      let company: string | null = null;
+      if (u.entrepreneurProfile) {
+        company = u.entrepreneurProfile.companyName;
+      } else if (u.assessorProfile) {
+        company = u.assessorProfile.organizationName;
+      }
+      return {
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`.trim(),
+        email: u.email,
+        status: u.status,
+        kycStatus: u.kycStatus,
+        country: u.countryCode,
+        company,
+        documents: (u.preferences as Record<string, any>)?.kycDocuments || null,
+        registeredDate: u.createdAt,
+        lastActive: u.lastLoginAt,
+      };
+    });
+  }
 }
 
 @ApiTags("Admin")
@@ -718,6 +803,14 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
     return this.adminService.getUserActivities(user);
+  }
+
+  @Get("kyc-cases")
+  findKycCases(
+    @Query("status") status: KycStatus | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown[]> {
+    return this.adminService.findKycCases(user, status);
   }
 }
 

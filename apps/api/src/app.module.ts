@@ -20,6 +20,7 @@ import { MessagingModule } from "./modules/messaging.module";
 import { NotificationsModule } from "./modules/notifications.module";
 import { ProjectsModule } from "./modules/projects.module";
 import { UsersModule } from "./modules/users.module";
+import { DealsModule } from "./modules/deals.module";
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { UsersModule } from "./modules/users.module";
     AdminModule,
     NotificationsModule,
     MessagingModule,
+    DealsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

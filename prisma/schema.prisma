@@ -554,6 +554,8 @@ model Project {
   viewCount       Int           @default(0)
   featured        Boolean       @default(false)
   featuredOrder   Int?
+  revisionNotes   String?
+  revisionRequestedAt DateTime?
 
   tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   owner           User   @relation("ProjectOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)

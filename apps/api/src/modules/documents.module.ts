@@ -150,6 +150,17 @@ class DocumentsService {
     return documents.map((document) => this.toResponse(document));
   }
 
+  async findByProject(
+    projectId: string,
+    user: AuthenticatedUser,
+  ): Promise<DocumentResponse[]> {
+    const documents = await this.prisma.document.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    return documents.map((document) => this.toResponse(document));
+  }
+
   async findById(
     id: string,
     user: AuthenticatedUser,
@@ -227,6 +238,14 @@ class DocumentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DocumentResponse[]> {
     return this.documentsService.findByUser(user);
+  }
+
+  @Get("project/:projectId")
+  findByProject(
+    @Param("projectId") projectId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DocumentResponse[]> {
+    return this.documentsService.findByProject(projectId, user);
   }
 
   @Post("upload-intents")

@@ -19,7 +19,9 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
 import {
+  ComplianceAlertStatus,
   InvestmentStatus,
+  KycStatus,
   LedgerDirection,
   LedgerOwnerType,
   PaymentMethod,
@@ -28,6 +30,7 @@ import {
   ProjectStatus,
   TransactionStatus,
   TransactionType,
+  UserStatus,
 } from "@prisma/client";
 import {
   AuthenticatedUser,
@@ -400,6 +403,118 @@ class InvestmentsService {
       data: { status: TransactionStatus.COMPLETED, processedAt: new Date() },
     });
     return this.toInvestmentResponse(investment);
+  }
+
+  async runComplianceCheck(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const investment = await this.prisma.investment.findUnique({
+      where: { id },
+      include: { investor: true, project: true },
+    });
+    if (!investment) throw new NotFoundException("Investment not found");
+    if (investment.investorUserId !== user.id && !this.permissions.isPlatformAdmin(user)) {
+      throw new ForbiddenException("You can only check your own investments");
+    }
+
+    // Run compliance checks
+    const checks: { name: string; passed: boolean; message?: string }[] = [];
+
+    // 1. KYC check
+    checks.push({
+      name: "kyc_verified",
+      passed: investment.investor.kycStatus === KycStatus.VERIFIED,
+      message:
+        investment.investor.kycStatus === KycStatus.VERIFIED
+          ? undefined
+          : "Investor KYC is not verified",
+    });
+
+    // 2. Investor status check
+    checks.push({
+      name: "investor_active",
+      passed: investment.investor.status === UserStatus.ACTIVE,
+      message:
+        investment.investor.status === UserStatus.ACTIVE
+          ? undefined
+          : "Investor account is not active",
+    });
+
+    // 3. Risk score check (placeholder logic)
+    const riskAlerts = await this.prisma.complianceAlert.count({
+      where: {
+        tenantId: investment.tenantId,
+        status: ComplianceAlertStatus.OPEN,
+      },
+    });
+    checks.push({
+      name: "compliance_clear",
+      passed: riskAlerts === 0,
+      message: riskAlerts === 0 ? undefined : `${riskAlerts} open compliance alerts exist`,
+    });
+
+    // 4. Jurisdiction check
+    checks.push({
+      name: "jurisdiction_allowed",
+      passed: true,
+      message: "Jurisdiction check passed (placeholder)",
+    });
+
+    const allPassed = checks.every((c) => c.passed);
+    const newStatus = allPassed
+      ? InvestmentStatus.PENDING_PAYMENT
+      : InvestmentStatus.REJECTED;
+
+    const updated = await this.prisma.investment.update({
+      where: { id },
+      data: { status: newStatus },
+      include: { project: true, investor: true },
+    });
+
+    return {
+      investment: this.toInvestmentResponse(updated),
+      complianceResult: {
+        passed: allPassed,
+        checks,
+      },
+    };
+  }
+
+  async createPaymentIntent(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const investment = await this.prisma.investment.findUnique({
+      where: { id },
+      include: { project: true, investor: true },
+    });
+    if (!investment) throw new NotFoundException("Investment not found");
+    if (investment.investorUserId !== user.id) {
+      throw new ForbiddenException("You can only pay for your own investments");
+    }
+    if (investment.status !== InvestmentStatus.PENDING_PAYMENT) {
+      throw new BadRequestException(
+        "Investment must pass compliance check before payment",
+      );
+    }
+
+    // Placeholder payment intent
+    const paymentIntentId = `pi_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    return {
+      paymentIntentId,
+      status: "requires_payment_method",
+      amount: investment.amount.toString(),
+      currency: investment.currency,
+      clientSecret: `${paymentIntentId}_secret_placeholder`,
+      metadata: {
+        investmentId: investment.id,
+        projectId: investment.projectId,
+        investorId: investment.investorUserId,
+      },
+      message: "This is a placeholder payment intent. Integrate with Stripe/M-Pesa/PayPal for production.",
+    };
   }
 
   async getPortfolio(
@@ -904,6 +1019,24 @@ class InvestmentsController {
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
   confirm(@Param("id") id: string): Promise<unknown> {
     return this.investmentsService.confirm(id);
+  }
+
+  @Post(":id/compliance-check")
+  @Roles(PlatformRole.INVESTOR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  runComplianceCheck(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.investmentsService.runComplianceCheck(id, user);
+  }
+
+  @Post(":id/payment-intent")
+  @Roles(PlatformRole.INVESTOR)
+  createPaymentIntent(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.investmentsService.createPaymentIntent(id, user);
   }
 }
 

@@ -1,0 +1,213 @@
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.253Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.265Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.270Z - Established a connection. Number of open connections: 1
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.272Z - Established a connection. Number of open connections: 2
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.278Z - Closed a connection. Number of open connections: 1
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.283Z - [REQUEST]: Responding to the client. Shutdown initiated
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.285Z - Done responding to the client Shutdown initiated
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.286Z - Handled FORCE_SHUTDOWN. Handling time: 0. Response time: 4.
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.286Z - Closed a connection. Number of open connections: 0
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.287Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.287Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)
+[NX v20.8.4 Daemon Server] - 2026-05-08T13:47:10.290Z - Server stopped because: "Request to shutdown"
+[NX Daemon Server] - 2026-05-08T13:48:34.635Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX Daemon Server] - 2026-05-08T13:48:34.647Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX Daemon Server] - 2026-05-08T13:48:34.654Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:48:34.658Z - Established a connection. Number of open connections: 2
+[NX Daemon Server] - 2026-05-08T13:48:34.662Z - Closed a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:48:34.666Z - [REQUEST]: Responding to the client. Shutdown initiated
+[NX Daemon Server] - 2026-05-08T13:48:34.669Z - Done responding to the client Shutdown initiated
+[NX Daemon Server] - 2026-05-08T13:48:34.669Z - Handled FORCE_SHUTDOWN. Handling time: 1. Response time: 3.
+[NX Daemon Server] - 2026-05-08T13:48:34.670Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T13:48:34.672Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (sources)
+[NX Daemon Server] - 2026-05-08T13:48:34.673Z - [WATCHER]: Stopping the watcher for D:\evzoneprojects\ev-backends\evzone-backend-api (outputs)
+[NX Daemon Server] - 2026-05-08T13:49:55.557Z - Started listening on: \\.\pipe\nx\C:\Users\dev_fx\AppData\Local\Temp\ec08348c7c2bdf9aa382\d.sock
+[NX Daemon Server] - 2026-05-08T13:49:55.561Z - [WATCHER]: Subscribed to changes within: D:\evzoneprojects\ev-backends\evzone-backend-api (native)
+[NX Daemon Server] - 2026-05-08T13:49:55.566Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:49:55.569Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T13:49:55.570Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:49:55.572Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T13:49:55.942Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\package-json' 358.3449ms
+[NX Daemon Server] - 2026-05-08T13:49:55.967Z - Time taken for 'Load Nx Plugin: D:\evzoneprojects\ev-backends\evzone-backend-api\node_modules\nx\src\plugins\project-json\build-nodes\project-json' 375.26939999999996ms
+[NX Daemon Server] - 2026-05-08T13:49:55.980Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T13:49:55.980Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T13:49:55.980Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T13:49:55.989Z - Time taken for 'loadNxPlugins' 404.7031ms
+[NX Daemon Server] - 2026-05-08T13:49:56.031Z - Time taken for 'build-project-configs' 20.374900000000025ms
+[NX Daemon Server] - 2026-05-08T13:49:56.057Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T13:49:56.059Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T13:49:56.060Z - Time taken for 'total for creating and serializing project graph' 486.3692ms
+[NX Daemon Server] - 2026-05-08T13:49:56.062Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T13:49:56.062Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 486. Response time: 4.
+[NX Daemon Server] - 2026-05-08T13:49:56.164Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T13:49:56.164Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T13:49:56.164Z - Handled HASH_TASKS. Handling time: 16. Response time: 0.
+[NX Daemon Server] - 2026-05-08T13:49:56.185Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T13:49:56.186Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T13:49:56.186Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 5. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:50:02.437Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.502Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.555Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.605Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.656Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.707Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.768Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.859Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.927Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:02.994Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:03.052Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:03.148Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:03.202Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:50:03.330Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T13:50:03.331Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T13:50:03.331Z - Handled RECORD_OUTPUTS_HASH. Handling time: 8. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:50:03.341Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T13:50:03.342Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T13:50:03.342Z - Handled RECORD_TASK_RUNS. Handling time: 4. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:50:03.344Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T13:50:03.345Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T13:50:03.345Z - Handled GET_FLAKY_TASKS. Handling time: 1. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:50:03.355Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T13:54:17.528Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:17.530Z - [WATCHER]: apps/api/src/modules/admin.module.ts was modified
+[NX Daemon Server] - 2026-05-08T13:54:17.642Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T13:54:17.642Z - [REQUEST]: apps/api/src/modules/admin.module.ts
+[NX Daemon Server] - 2026-05-08T13:54:17.642Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T13:54:17.650Z - Time taken for 'hash changed files from watcher' 0.8793000000296161ms
+[NX Daemon Server] - 2026-05-08T13:54:17.677Z - Time taken for 'build-project-configs' 22.33249999996042ms
+[NX Daemon Server] - 2026-05-08T13:54:17.727Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T13:54:17.728Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T13:54:17.728Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T13:54:17.728Z - Time taken for 'total execution time for createProjectGraph()' 43.07459999999264ms
+[NX Daemon Server] - 2026-05-08T13:54:18.557Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:18.637Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:39.731Z - [WATCHER]: apps/api/src/modules/admin.module.ts was modified
+[NX Daemon Server] - 2026-05-08T13:54:39.731Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:39.939Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T13:54:39.939Z - [REQUEST]: apps/api/src/modules/admin.module.ts
+[NX Daemon Server] - 2026-05-08T13:54:39.939Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T13:54:39.943Z - Time taken for 'hash changed files from watcher' 0.5131999999866821ms
+[NX Daemon Server] - 2026-05-08T13:54:39.962Z - Time taken for 'build-project-configs' 14.92559999995865ms
+[NX Daemon Server] - 2026-05-08T13:54:40.001Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T13:54:40.002Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T13:54:40.003Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T13:54:40.003Z - Time taken for 'total execution time for createProjectGraph()' 30.42249999998603ms
+[NX Daemon Server] - 2026-05-08T13:54:40.159Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:40.222Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:49.027Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:54:49.027Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T13:54:49.028Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T13:54:49.032Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T13:54:49.032Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T13:54:49.033Z - Time taken for 'total for creating and serializing project graph' 0.41790000000037253ms
+[NX Daemon Server] - 2026-05-08T13:54:49.034Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T13:54:49.034Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 0. Response time: 2.
+[NX Daemon Server] - 2026-05-08T13:54:49.097Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T13:54:49.098Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T13:54:49.098Z - Handled HASH_TASKS. Handling time: 12. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:54:49.113Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T13:54:49.114Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T13:54:49.114Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:54:53.471Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T13:54:53.572Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T13:54:53.573Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T13:54:53.573Z - Handled RECORD_OUTPUTS_HASH. Handling time: 9. Response time: 1.
+[NX Daemon Server] - 2026-05-08T13:54:53.698Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T13:54:53.698Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T13:54:53.698Z - Handled RECORD_TASK_RUNS. Handling time: 3. Response time: 0.
+[NX Daemon Server] - 2026-05-08T13:54:53.700Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T13:54:53.700Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T13:54:53.700Z - Handled GET_FLAKY_TASKS. Handling time: 1. Response time: 0.
+[NX Daemon Server] - 2026-05-08T13:54:53.711Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T14:02:41.648Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:02:41.650Z - [WATCHER]: apps/api/src/modules/projects.module.ts was modified
+[NX Daemon Server] - 2026-05-08T14:02:41.766Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T14:02:41.766Z - [REQUEST]: apps/api/src/modules/projects.module.ts
+[NX Daemon Server] - 2026-05-08T14:02:41.766Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T14:02:41.775Z - Time taken for 'hash changed files from watcher' 2.4274000000441447ms
+[NX Daemon Server] - 2026-05-08T14:02:41.800Z - Time taken for 'build-project-configs' 21.909400000004098ms
+[NX Daemon Server] - 2026-05-08T14:02:41.839Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T14:02:41.840Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T14:02:41.840Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T14:02:41.840Z - Time taken for 'total execution time for createProjectGraph()' 33.23699999996461ms
+[NX Daemon Server] - 2026-05-08T14:02:42.443Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:02:42.507Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:03.165Z - [WATCHER]: apps/api/src/modules/documents.module.ts was modified
+[NX Daemon Server] - 2026-05-08T14:03:03.166Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:03.382Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T14:03:03.383Z - [REQUEST]: apps/api/src/modules/documents.module.ts
+[NX Daemon Server] - 2026-05-08T14:03:03.383Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T14:03:03.388Z - Time taken for 'hash changed files from watcher' 0.7691000000340864ms
+[NX Daemon Server] - 2026-05-08T14:03:03.407Z - Time taken for 'build-project-configs' 18.058799999998882ms
+[NX Daemon Server] - 2026-05-08T14:03:03.448Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T14:03:03.449Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T14:03:03.450Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T14:03:03.450Z - Time taken for 'total execution time for createProjectGraph()' 31.827899999916553ms
+[NX Daemon Server] - 2026-05-08T14:03:03.848Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:03.915Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:54.945Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:54.964Z - [WATCHER]: apps/api/src/modules/users.module.ts was modified
+[NX Daemon Server] - 2026-05-08T14:03:55.379Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T14:03:55.379Z - [REQUEST]: apps/api/src/modules/users.module.ts
+[NX Daemon Server] - 2026-05-08T14:03:55.379Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T14:03:55.389Z - Time taken for 'hash changed files from watcher' 0.586100000073202ms
+[NX Daemon Server] - 2026-05-08T14:03:55.411Z - Time taken for 'build-project-configs' 21.22259999997914ms
+[NX Daemon Server] - 2026-05-08T14:03:55.454Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T14:03:55.455Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T14:03:55.455Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T14:03:55.455Z - Time taken for 'total execution time for createProjectGraph()' 36.62609999999404ms
+[NX Daemon Server] - 2026-05-08T14:03:55.611Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:03:55.678Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:04:15.594Z - [WATCHER]: apps/api/src/modules/users.module.ts was modified
+[NX Daemon Server] - 2026-05-08T14:04:15.594Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:04:16.065Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:04:16.144Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:04:16.410Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T14:04:16.410Z - [REQUEST]: apps/api/src/modules/users.module.ts
+[NX Daemon Server] - 2026-05-08T14:04:16.410Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T14:04:16.415Z - Time taken for 'hash changed files from watcher' 0.4985000001033768ms
+[NX Daemon Server] - 2026-05-08T14:04:16.431Z - Time taken for 'build-project-configs' 14.240299999946728ms
+[NX Daemon Server] - 2026-05-08T14:04:16.462Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T14:04:16.463Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T14:04:16.463Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T14:04:16.463Z - Time taken for 'total execution time for createProjectGraph()' 21.81429999996908ms
+[NX Daemon Server] - 2026-05-08T14:06:21.357Z - [WATCHER]: prisma/schema.prisma was modified
+[NX Daemon Server] - 2026-05-08T14:06:21.357Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:22.972Z - [REQUEST]: Updated workspace context based on watched changes, recomputing project graph...
+[NX Daemon Server] - 2026-05-08T14:06:22.972Z - [REQUEST]: prisma/schema.prisma
+[NX Daemon Server] - 2026-05-08T14:06:22.972Z - [REQUEST]: 
+[NX Daemon Server] - 2026-05-08T14:06:22.976Z - Time taken for 'hash changed files from watcher' 0.5873999999603257ms
+[NX Daemon Server] - 2026-05-08T14:06:22.995Z - Time taken for 'build-project-configs' 16.385400000028312ms
+[NX Daemon Server] - 2026-05-08T14:06:23.024Z - [SYNC]: collect registered sync generators
+[NX Daemon Server] - 2026-05-08T14:06:23.025Z - [SYNC]: project graph hash is the same, not collecting task sync generators
+[NX Daemon Server] - 2026-05-08T14:06:23.025Z - [SYNC]: nx.json hash is the same, not collecting global sync generators
+[NX Daemon Server] - 2026-05-08T14:06:23.025Z - Time taken for 'total execution time for createProjectGraph()' 23.957999999984168ms
+[NX Daemon Server] - 2026-05-08T14:06:45.624Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T14:06:45.624Z - Closed a connection. Number of open connections: 0
+[NX Daemon Server] - 2026-05-08T14:06:45.625Z - Established a connection. Number of open connections: 1
+[NX Daemon Server] - 2026-05-08T14:06:45.628Z - [REQUEST]: Client Request for Project Graph Received
+[NX Daemon Server] - 2026-05-08T14:06:45.628Z - [REQUEST]: Responding to the client. project-graph
+[NX Daemon Server] - 2026-05-08T14:06:45.629Z - Time taken for 'total for creating and serializing project graph' 0.31550000002607703ms
+[NX Daemon Server] - 2026-05-08T14:06:45.630Z - Done responding to the client project-graph
+[NX Daemon Server] - 2026-05-08T14:06:45.630Z - Handled REQUEST_PROJECT_GRAPH. Handling time: 0. Response time: 2.
+[NX Daemon Server] - 2026-05-08T14:06:45.700Z - [REQUEST]: Responding to the client. handleHashTasks
+[NX Daemon Server] - 2026-05-08T14:06:45.701Z - Done responding to the client handleHashTasks
+[NX Daemon Server] - 2026-05-08T14:06:45.701Z - Handled HASH_TASKS. Handling time: 17. Response time: 1.
+[NX Daemon Server] - 2026-05-08T14:06:45.718Z - [REQUEST]: Responding to the client. handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T14:06:45.719Z - Done responding to the client handleGetEstimatedTaskTimings
+[NX Daemon Server] - 2026-05-08T14:06:45.719Z - Handled GET_ESTIMATED_TASK_TIMINGS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T14:06:50.484Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:50.550Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:50.610Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:50.667Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:50.732Z - [WATCHER]: Processing file changes in outputs
+[NX Daemon Server] - 2026-05-08T14:06:50.775Z - [REQUEST]: Responding to the client. recordOutputsHash
+[NX Daemon Server] - 2026-05-08T14:06:50.775Z - Done responding to the client recordOutputsHash
+[NX Daemon Server] - 2026-05-08T14:06:50.775Z - Handled RECORD_OUTPUTS_HASH. Handling time: 6. Response time: 0.
+[NX Daemon Server] - 2026-05-08T14:06:50.898Z - [REQUEST]: Responding to the client. handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T14:06:50.899Z - Done responding to the client handleRecordTaskRuns
+[NX Daemon Server] - 2026-05-08T14:06:50.899Z - Handled RECORD_TASK_RUNS. Handling time: 2. Response time: 1.
+[NX Daemon Server] - 2026-05-08T14:06:50.900Z - [REQUEST]: Responding to the client. handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T14:06:50.900Z - Done responding to the client handleGetFlakyTasks
+[NX Daemon Server] - 2026-05-08T14:06:50.901Z - Handled GET_FLAKY_TASKS. Handling time: 0. Response time: 1.
+[NX Daemon Server] - 2026-05-08T14:06:50.909Z - Closed a connection. Number of open connections: 0
