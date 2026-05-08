@@ -46,6 +46,8 @@ import {
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
 import { PermissionsService } from "@evzone/permissions";
+import { PaymentIntentsService } from "./payments/payments.service";
+import { PaymentsModule } from "./payments/payments.module";
 
 class InvestmentFilterDto extends PaginationDto {
   @IsOptional()
@@ -173,6 +175,7 @@ class InvestmentsService {
     private readonly transactions: TransactionService,
     private readonly outbox: OutboxService,
     private readonly permissions: PermissionsService,
+    private readonly paymentIntents: PaymentIntentsService,
   ) {}
 
   async invest(
@@ -499,22 +502,20 @@ class InvestmentsService {
       );
     }
 
-    // Placeholder payment intent
-    const paymentIntentId = `pi_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-
-    return {
-      paymentIntentId,
-      status: "requires_payment_method",
+    return this.paymentIntents.createCollectionIntent({
       amount: investment.amount.toString(),
       currency: investment.currency,
-      clientSecret: `${paymentIntentId}_secret_placeholder`,
-      metadata: {
-        investmentId: investment.id,
-        projectId: investment.projectId,
-        investorId: investment.investorUserId,
-      },
-      message: "This is a placeholder payment intent. Integrate with Stripe/M-Pesa/PayPal for production.",
-    };
+      customerEmail: investment.investor.email,
+      customerPhone: investment.investor.phone ?? undefined,
+      customerName: `${investment.investor.firstName} ${investment.investor.lastName}`,
+      customerCountry: investment.project.countryCode ?? undefined,
+      investmentId: investment.id,
+      dealId: investment.dealId ?? undefined,
+      purpose: "INVESTMENT_FUNDING",
+      tenantId: user.tenantId,
+      userId: user.id,
+      paymentMethod: investment.paymentMethod ?? undefined,
+    });
   }
 
   async getPortfolio(
@@ -1166,6 +1167,7 @@ class TransactionsController {
 }
 
 @Module({
+  imports: [PaymentsModule],
   controllers: [InvestmentsController, TransactionsController],
   providers: [InvestmentsService],
   exports: [InvestmentsService],

@@ -766,6 +766,41 @@ class UsersController {
   ): Promise<UserResponse> {
     return this.usersService.updateInvestorProfile(id, dto, user);
   }
+
+  @Get(":id/notification-preferences")
+  async getNotificationPreferences(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const found = await this.usersService.findById(id, user);
+    const prefs =
+      found.preferences &&
+      typeof found.preferences === "object" &&
+      !Array.isArray(found.preferences) &&
+      "notifications" in found.preferences
+        ? (found.preferences as Record<string, unknown>).notifications
+        : {};
+    return prefs;
+  }
+
+  @Patch(":id/notification-preferences")
+  async updateNotificationPreferences(
+    @Param("id") id: string,
+    @Body() dto: { preferences: unknown },
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    const found = await this.usersService.findById(id, user);
+    const currentPrefs =
+      found.preferences && typeof found.preferences === "object" && !Array.isArray(found.preferences)
+        ? (found.preferences as Record<string, unknown>)
+        : {};
+    return this.usersService.updateProfile(id, {
+      preferences: {
+        ...currentPrefs,
+        notifications: dto.preferences as Prisma.InputJsonValue,
+      },
+    }, user);
+  }
 }
 
 @Module({

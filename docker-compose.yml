@@ -251,6 +251,39 @@ services:
       - evzone-network
     command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/scheduler/src/main.ts"]
 
+  worker-webhooks:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: evzone-worker-webhooks
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      DIRECT_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_CLIENT_ID: evzone-platform
+      KAFKA_CONSUMER_GROUP: evzone-worker-events
+      FLUTTERWAVE_SECRET_KEY: ${FLUTTERWAVE_SECRET_KEY:-}
+      FLUTTERWAVE_WEBHOOK_HASH: ${FLUTTERWAVE_WEBHOOK_HASH:-}
+      PAYTOTA_SECRET_KEY: ${PAYTOTA_SECRET_KEY:-}
+      PAYTOTA_WEBHOOK_SECRET: ${PAYTOTA_WEBHOOK_SECRET:-}
+      SMILE_IDENTITY_API_KEY: ${SMILE_IDENTITY_API_KEY:-}
+      SMILE_IDENTITY_PARTNER_ID: ${SMILE_IDENTITY_PARTNER_ID:-}
+      SMILE_IDENTITY_WEBHOOK_SECRET: ${SMILE_IDENTITY_WEBHOOK_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - evzone-network
+    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-webhooks/src/main.ts"]
+
 volumes:
   postgres-data:
   redis-data:

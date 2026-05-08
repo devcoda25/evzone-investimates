@@ -13,7 +13,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
 import {
   ComplianceAlertSeverity,
   ComplianceAlertStatus,
@@ -96,6 +96,20 @@ class AuditLogFilterDto extends PaginationDto {
   @IsOptional()
   @IsString()
   userId?: string;
+}
+
+class ReportDateRangeDto {
+  @IsOptional()
+  @IsISO8601()
+  startDate?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
 }
 
 class RiskAssessmentDto {
@@ -653,6 +667,285 @@ class AdminService {
       };
     });
   }
+
+  // ============= Regulatory Reports =============
+
+  private getDateRange(
+    dto?: ReportDateRangeDto,
+  ): { startDate: Date; endDate: Date } {
+    const endDate = dto?.endDate ? new Date(dto.endDate) : new Date();
+    const startDate = dto?.startDate
+      ? new Date(dto.startDate)
+      : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return { startDate, endDate };
+  }
+
+  private getTenantWhere(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Record<string, unknown> {
+    if (dto?.tenantId && this.permissions.isPlatformAdmin(user)) {
+      return { tenantId: dto.tenantId };
+    }
+    return this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+  }
+
+  async getTransactionSummaryReport(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Promise<Record<string, unknown>> {
+    const { startDate, endDate } = this.getDateRange(dto);
+    const tenantWhere = this.getTenantWhere(user, dto);
+
+    const [byType, byStatus, volume, byCurrency] = await Promise.all([
+      this.prisma.transaction.groupBy({
+        by: ["type"],
+        where: { ...tenantWhere, createdAt: { gte: startDate, lte: endDate } },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ["status"],
+        where: { ...tenantWhere, createdAt: { gte: startDate, lte: endDate } },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: { ...tenantWhere, createdAt: { gte: startDate, lte: endDate } },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ["currency"],
+        where: { ...tenantWhere, createdAt: { gte: startDate, lte: endDate } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      period: { startDate, endDate },
+      totalCount: volume._count.id,
+      totalVolume: volume._sum.amount?.toString() ?? "0",
+      byType: Object.fromEntries(
+        byType.map((row) => [
+          row.type,
+          { count: row._count.id, amount: row._sum.amount?.toString() ?? "0" },
+        ]),
+      ),
+      byStatus: Object.fromEntries(
+        byStatus.map((row) => [
+          row.status,
+          { count: row._count.id, amount: row._sum.amount?.toString() ?? "0" },
+        ]),
+      ),
+      byCurrency: Object.fromEntries(
+        byCurrency.map((row) => [
+          row.currency,
+          { amount: row._sum.amount?.toString() ?? "0" },
+        ]),
+      ),
+    };
+  }
+
+  async getSuspiciousActivityReport(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Promise<Record<string, unknown>> {
+    const { startDate, endDate } = this.getDateRange(dto);
+    const tenantWhere = this.getTenantWhere(user, dto);
+    const threshold = 10000; // configurable threshold
+
+    const [largeTransactions, flaggedTransactions, alerts] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: {
+          ...tenantWhere,
+          createdAt: { gte: startDate, lte: endDate },
+          amount: { gte: threshold },
+        },
+        orderBy: { amount: "desc" },
+        take: 50,
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          ...tenantWhere,
+          createdAt: { gte: startDate, lte: endDate },
+          status: TransactionStatus.FLAGGED,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+      this.prisma.complianceAlert.findMany({
+        where: {
+          ...tenantWhere,
+          createdAt: { gte: startDate, lte: endDate },
+          severity: { in: [ComplianceAlertSeverity.HIGH, ComplianceAlertSeverity.CRITICAL] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      period: { startDate, endDate },
+      threshold,
+      largeTransactions: largeTransactions.map((t) => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount.toString(),
+        currency: t.currency,
+        status: t.status,
+        userId: t.userId,
+        createdAt: t.createdAt,
+      })),
+      flaggedTransactions: flaggedTransactions.map((t) => ({
+        id: t.id,
+        type: t.type,
+        amount: t.amount.toString(),
+        currency: t.currency,
+        status: t.status,
+        userId: t.userId,
+        createdAt: t.createdAt,
+      })),
+      complianceAlerts: alerts,
+    };
+  }
+
+  async getAuditTrailReport(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Promise<Record<string, unknown>> {
+    const { startDate, endDate } = this.getDateRange(dto);
+    const tenantWhere = this.getTenantWhere(user, dto);
+
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        ...tenantWhere,
+        createdAt: { gte: startDate, lte: endDate },
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 1000,
+    });
+
+    return {
+      period: { startDate, endDate },
+      totalCount: logs.length,
+      logs: logs.map((l) => ({
+        id: l.id,
+        action: l.action,
+        entityType: l.entityType,
+        entityId: l.entityId,
+        user: l.user,
+        oldValues: l.oldValues,
+        newValues: l.newValues,
+        ipAddress: l.ipAddress,
+        createdAt: l.createdAt,
+      })),
+    };
+  }
+
+  async getKycStatusReport(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Promise<Record<string, unknown>> {
+    const tenantWhere = this.getTenantWhere(user, dto);
+
+    const [byStatus, pendingApplications, recentRejections] = await Promise.all([
+      this.prisma.user.groupBy({
+        by: ["kycStatus"],
+        where: tenantWhere,
+        _count: { id: true },
+      }),
+      this.prisma.kycApplication.findMany({
+        where: {
+          tenantId: tenantWhere.tenantId as string,
+          status: { in: ["PENDING" as any, "SUBMITTED" as any, "PROCESSING" as any] },
+        },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+      this.prisma.kycApplication.findMany({
+        where: {
+          tenantId: tenantWhere.tenantId as string,
+          status: "REJECTED" as any,
+        },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+        orderBy: { rejectedAt: "desc" },
+        take: 50,
+      }),
+    ]);
+
+    return {
+      byStatus: Object.fromEntries(
+        byStatus.map((row) => [row.kycStatus, row._count.id]),
+      ),
+      pendingApplications: pendingApplications.map((a) => ({
+        id: a.id,
+        user: a.user,
+        provider: a.provider,
+        status: a.status,
+        createdAt: a.createdAt,
+      })),
+      recentRejections: recentRejections.map((a) => ({
+        id: a.id,
+        user: a.user,
+        provider: a.provider,
+        rejectionReason: a.rejectionReason,
+        rejectedAt: a.rejectedAt,
+      })),
+    };
+  }
+
+  async getLedgerReconciliationReport(
+    user: AuthenticatedUser,
+    dto?: ReportDateRangeDto,
+  ): Promise<Record<string, unknown>> {
+    const tenantWhere = this.getTenantWhere(user, dto);
+
+    const accounts = await this.prisma.ledgerAccount.findMany({
+      where: tenantWhere,
+      include: {
+        entries: { select: { direction: true, amount: true, currency: true } },
+      },
+    });
+
+    const report = accounts.map((acc) => {
+      const debits = acc.entries
+        .filter((e) => e.direction === "DEBIT")
+        .reduce((sum, e) => sum + e.amount.toNumber(), 0);
+      const credits = acc.entries
+        .filter((e) => e.direction === "CREDIT")
+        .reduce((sum, e) => sum + e.amount.toNumber(), 0);
+      return {
+        id: acc.id,
+        name: acc.name,
+        ownerType: acc.ownerType,
+        ownerId: acc.ownerId,
+        currency: acc.currency,
+        debits,
+        credits,
+        balance: debits - credits,
+        entryCount: acc.entries.length,
+      };
+    });
+
+    return {
+      accounts: report,
+      totalAccounts: report.length,
+      totalDebits: report.reduce((sum, r) => sum + r.debits, 0),
+      totalCredits: report.reduce((sum, r) => sum + r.credits, 0),
+      netBalance: report.reduce((sum, r) => sum + r.balance, 0),
+    };
+  }
 }
 
 @ApiTags("Admin")
@@ -817,6 +1110,48 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
     return this.adminService.findKycCases(user, status);
+  }
+
+  // ============= Regulatory Reports =============
+
+  @Get("compliance/reports/transaction-summary")
+  getTransactionSummaryReport(
+    @Query() dto: ReportDateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getTransactionSummaryReport(user, dto);
+  }
+
+  @Get("compliance/reports/suspicious-activity")
+  getSuspiciousActivityReport(
+    @Query() dto: ReportDateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getSuspiciousActivityReport(user, dto);
+  }
+
+  @Get("compliance/reports/audit-trail")
+  getAuditTrailReport(
+    @Query() dto: ReportDateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getAuditTrailReport(user, dto);
+  }
+
+  @Get("compliance/reports/kyc-status")
+  getKycStatusReport(
+    @Query() dto: ReportDateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getKycStatusReport(user, dto);
+  }
+
+  @Get("compliance/reports/ledger-reconciliation")
+  getLedgerReconciliationReport(
+    @Query() dto: ReportDateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.getLedgerReconciliationReport(user, dto);
   }
 }
 
