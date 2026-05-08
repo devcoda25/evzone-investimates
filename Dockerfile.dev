@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies (including dev)
+COPY package*.json ./
+RUN npm install && npm cache clean --force
+
+# Copy source
+COPY . .
+
+# Create uploads directory
+RUN mkdir -p uploads
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start:dev"]
