@@ -1,0 +1,5 @@
+> tsc -p apps/api/tsconfig.app.json
+
+apps/api/src/modules/deals.module.ts(361,11): error TS2451: Cannot redeclare block-scoped variable 'key'.
+apps/api/src/modules/deals.module.ts(362,11): error TS2451: Cannot redeclare block-scoped variable 'key'.
+apps/api/src/modules/deals.module.ts(556,6): error TS2348: Value of type '{ new (init?: HeadersInit | undefined): Headers; prototype: Headers; }' is not callable. Did you mean to include 'new'?

@@ -15,8 +15,8 @@ import {
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEmail, IsEnum, IsInt, IsOptional, IsString } from "class-validator";
-import { EntrepreneurStage, KycStatus, PlatformRole, Prisma, UserStatus } from "@prisma/client";
+import { IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString } from "class-validator";
+import { EntrepreneurStage, InvestorType, KycStatus, PlatformRole, Prisma, RiskTolerance, UserStatus } from "@prisma/client";
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -182,6 +182,34 @@ class UpdateEntrepreneurProfileDto {
   @IsOptional()
   @IsString()
   pitchDeck?: string;
+}
+
+class UpdateInvestorProfileDto {
+  @IsOptional()
+  @IsEnum(InvestorType)
+  investorType?: InvestorType;
+
+  @IsOptional()
+  @IsEnum(RiskTolerance)
+  riskTolerance?: RiskTolerance;
+
+  @IsOptional()
+  @IsNumber()
+  annualIncome?: number;
+
+  @IsOptional()
+  @IsNumber()
+  netWorth?: number;
+
+  @IsOptional()
+  @IsString()
+  accreditationStatus?: string;
+
+  @IsOptional()
+  investmentGoals?: string[];
+
+  @IsOptional()
+  preferredSectors?: string[];
 }
 
 interface UserStatsResponse {
@@ -480,6 +508,49 @@ class UsersService {
     return this.toResponse(updated!);
   }
 
+  async updateInvestorProfile(
+    id: string,
+    dto: UpdateInvestorProfileDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    await this.findById(id, currentUser);
+    await this.prisma.investorProfile.upsert({
+      where: { userId: id },
+      create: {
+        userId: id,
+        investorType: dto.investorType ?? InvestorType.INDIVIDUAL,
+        riskTolerance: dto.riskTolerance ?? RiskTolerance.MODERATE,
+        annualIncome: dto.annualIncome,
+        netWorth: dto.netWorth,
+        accreditationStatus: dto.accreditationStatus === "true",
+        investmentGoals: dto.investmentGoals,
+        preferredSectors: dto.preferredSectors,
+      },
+      update: {
+        investorType: dto.investorType,
+        riskTolerance: dto.riskTolerance,
+        annualIncome: dto.annualIncome,
+        netWorth: dto.netWorth,
+        accreditationStatus:
+          dto.accreditationStatus === undefined
+            ? undefined
+            : dto.accreditationStatus === "true",
+        investmentGoals: dto.investmentGoals,
+        preferredSectors: dto.preferredSectors,
+      },
+    });
+    const updated = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+    return this.toResponse(updated!);
+  }
+
   private buildUserWhere(
     filter: UserFilterDto,
     currentUser: AuthenticatedUser,
@@ -685,6 +756,15 @@ class UsersController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserResponse> {
     return this.usersService.updateEntrepreneurProfile(id, dto, user);
+  }
+
+  @Patch(":id/investor-profile")
+  updateInvestorProfile(
+    @Param("id") id: string,
+    @Body() dto: UpdateInvestorProfileDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    return this.usersService.updateInvestorProfile(id, dto, user);
   }
 }
 

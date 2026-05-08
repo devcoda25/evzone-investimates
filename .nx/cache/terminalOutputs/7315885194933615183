@@ -1,0 +1,9 @@
+> tsc -p apps/api/tsconfig.app.json
+
+apps/api/src/modules/deals.module.ts(100,3): error TS2416: Property 'title' in type 'UpdateDealDto' is not assignable to the same property in base type 'CreateDealDto'.
+  Type 'string | undefined' is not assignable to type 'string'.
+    Type 'undefined' is not assignable to type 'string'.
+apps/api/src/modules/deals.module.ts(104,3): error TS2416: Property 'projectId' in type 'UpdateDealDto' is not assignable to the same property in base type 'CreateDealDto'.
+  Type 'string | undefined' is not assignable to type 'string'.
+    Type 'undefined' is not assignable to type 'string'.
+apps/api/src/modules/deals.module.ts(525,6): error TS2348: Value of type '{ new (init?: HeadersInit | undefined): Headers; prototype: Headers; }' is not callable. Did you mean to include 'new'?
