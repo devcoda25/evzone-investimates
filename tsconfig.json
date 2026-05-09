@@ -30,7 +30,8 @@
       "@evzone/audit": ["libs/audit/src/index.ts"],
       "@evzone/encryption": ["libs/encryption/src/index.ts"],
       "@evzone/impact": ["libs/impact/src/index.ts"],
-      "@evzone/notifications": ["libs/notifications/src/index.ts"]
+      "@evzone/notifications": ["libs/notifications/src/index.ts"],
+      "@evzone/observability": ["libs/observability/src/index.ts"]
     }
   },
   "include": ["apps/**/*.ts", "libs/**/*.ts", "prisma/**/*.ts", "test/**/*.ts"],

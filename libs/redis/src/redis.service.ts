@@ -59,6 +59,84 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    if (ttlSeconds) {
+      await this.client.set(key, value, 'EX', ttlSeconds);
+    } else {
+      await this.client.set(key, value);
+    }
+  }
+
+  // ── OTP helpers ──
+
+  async storeOtp(key: string, code: string, ttlSeconds: number = 300): Promise<void> {
+    await this.client.set(`otp:${key}`, code, 'EX', ttlSeconds);
+  }
+
+  async verifyOtp(key: string, code: string): Promise<boolean> {
+    const stored = await this.client.get(`otp:${key}`);
+    if (stored === null) return false;
+    if (stored === code) {
+      await this.client.del(`otp:${key}`);
+      return true;
+    }
+    return false;
+  }
+
+  async invalidateOtp(key: string): Promise<void> {
+    await this.client.del(`otp:${key}`);
+  }
+
+  // ── Session helpers ──
+
+  async storeSession(sessionId: string, data: unknown, ttlSeconds: number = 3600): Promise<void> {
+    await this.client.set(`session:${sessionId}`, JSON.stringify(data), 'EX', ttlSeconds);
+  }
+
+  async getSession<T>(sessionId: string): Promise<T | null> {
+    const value = await this.client.get(`session:${sessionId}`);
+    return value ? JSON.parse(value) as T : null;
+  }
+
+  async revokeSession(sessionId: string): Promise<void> {
+    await this.client.del(`session:${sessionId}`);
+  }
+
+  // ── Idempotency helpers ──
+
+  async getIdempotency(key: string): Promise<string | null> {
+    return this.client.get(`idem:${key}`);
+  }
+
+  async setIdempotency(key: string, result: string, ttlSeconds: number = 86400): Promise<void> {
+    await this.client.set(`idem:${key}`, result, 'EX', ttlSeconds);
+  }
+
+  async deleteIdempotency(key: string): Promise<void> {
+    await this.client.del(`idem:${key}`);
+  }
+
+  // ── Login attempt counter ──
+
+  async incrementLoginAttempts(key: string, ttlSeconds: number = 900): Promise<number> {
+    const count = await this.client.incr(`login-attempts:${key}`);
+    if (count === 1) {
+      await this.client.expire(`login-attempts:${key}`, ttlSeconds);
+    }
+    return count;
+  }
+
+  async resetLoginAttempts(key: string): Promise<void> {
+    await this.client.del(`login-attempts:${key}`);
+  }
+
+  async getLoginAttempts(key: string): Promise<number> {
+    const val = await this.client.get(`login-attempts:${key}`);
+    return val ? parseInt(val, 10) : 0;
+  }
+
+  // ── Raw client access ──
+
   async getClient(): Promise<Redis> {
     return this.client;
   }
