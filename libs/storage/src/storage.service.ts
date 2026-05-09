@@ -8,7 +8,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { SignedUploadIntent, StoragePutInput } from "./types";
+import { SignedReadIntent, SignedUploadIntent, StoragePutInput } from "./types";
 
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -76,6 +76,15 @@ export class StorageService implements OnModuleInit {
     return getSignedUrl(this.client, command, {
       expiresIn: this.signedUrlTtlSeconds,
     });
+  }
+
+  async createReadIntent(objectKey: string): Promise<SignedReadIntent> {
+    const readUrl = await this.createReadUrl(objectKey);
+    return {
+      objectKey,
+      readUrl,
+      expiresInSeconds: this.signedUrlTtlSeconds,
+    };
   }
 
   async putObject(input: StoragePutInput): Promise<void> {

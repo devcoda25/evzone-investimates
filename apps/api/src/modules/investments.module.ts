@@ -45,9 +45,11 @@ import {
 } from "@evzone/common";
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
+import { AuditService } from "@evzone/audit";
 import { PermissionsService } from "@evzone/permissions";
 import { PaymentIntentsService } from "./payments/payments.service";
 import { PaymentsModule } from "./payments/payments.module";
+import { CreateCollectionIntentResult } from "./payments/payment-provider.interface";
 
 class InvestmentFilterDto extends PaginationDto {
   @IsOptional()
@@ -176,7 +178,8 @@ export class InvestmentsService {
     private readonly outbox: OutboxService,
     private readonly permissions: PermissionsService,
     private readonly paymentIntents: PaymentIntentsService,
-  ) {}
+    private readonly audit: AuditService,
+  ) { }
 
   async invest(
     investor: AuthenticatedUser,
@@ -282,6 +285,16 @@ export class InvestmentsService {
           amount: dto.amount,
         },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: investor },
+        "investment.created",
+        "investment",
+        investment.id,
+        undefined,
+        { amount: dto.amount, projectId: project.id, dealId: investment.dealId },
+        undefined,
+        tx as any,
+      );
       return tx.investment.findUniqueOrThrow({
         where: { id: investment.id },
         include: { project: true, investor: true },
@@ -386,16 +399,35 @@ export class InvestmentsService {
         where: { id: investment.projectId },
         data: { fundingRaised: { decrement: investment.amount } },
       });
-      return tx.investment.update({
+      const result = await tx.investment.update({
         where: { id },
         data: { status: InvestmentStatus.CANCELLED },
         include: { project: true, investor: true },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "investment.cancelled",
+        "investment",
+        id,
+        { status: investment.status, amount: investment.amount.toString() },
+        { status: InvestmentStatus.CANCELLED },
+        undefined,
+        tx as any,
+      );
+      await this.outbox.create(tx, {
+        tenantId: investment.tenantId,
+        topic: "investment.cancelled",
+        eventType: "investment.cancelled",
+        aggregateType: "investment",
+        aggregateId: id,
+        payload: { investmentId: id, amount: investment.amount.toString() },
+      });
+      return result;
     });
     return this.toInvestmentResponse(updated);
   }
 
-  async confirm(id: string): Promise<unknown> {
+  async confirm(id: string, user: AuthenticatedUser): Promise<unknown> {
     const investment = await this.prisma.investment.update({
       where: { id },
       data: { status: InvestmentStatus.CONFIRMED, confirmedAt: new Date() },
@@ -404,6 +436,22 @@ export class InvestmentsService {
     await this.prisma.transaction.updateMany({
       where: { investmentId: id, type: TransactionType.INVESTMENT },
       data: { status: TransactionStatus.COMPLETED, processedAt: new Date() },
+    });
+    await this.audit.record({
+      tenantId: investment.tenantId,
+      userId: user.id,
+      action: "investment.confirmed",
+      entityType: "investment",
+      entityId: id,
+      metadata: { amount: investment.amount.toString(), currency: investment.currency },
+    });
+    await this.outbox.create(this.prisma as any, {
+      tenantId: investment.tenantId,
+      topic: "investment.confirmed",
+      eventType: "investment.confirmed",
+      aggregateType: "investment",
+      aggregateId: id,
+      payload: { investmentId: id, amount: investment.amount.toString() },
     });
     return this.toInvestmentResponse(investment);
   }
@@ -469,10 +517,38 @@ export class InvestmentsService {
       ? InvestmentStatus.PENDING_PAYMENT
       : InvestmentStatus.REJECTED;
 
-    const updated = await this.prisma.investment.update({
-      where: { id },
-      data: { status: newStatus },
-      include: { project: true, investor: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.investment.update({
+        where: { id },
+        data: { status: newStatus },
+        include: { project: true, investor: true },
+      });
+
+      await this.outbox.create(tx, {
+        tenantId: result.tenantId,
+        topic: "investment.compliance_approved",
+        eventType: "investment.compliance_approved",
+        aggregateType: "investment",
+        aggregateId: id,
+        payload: {
+          investmentId: id,
+          passed: allPassed,
+          checks: checks.map((c) => ({ name: c.name, passed: c.passed })),
+        },
+      });
+
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "investment.compliance_check",
+        "investment",
+        id,
+        { status: investment.status },
+        { status: newStatus, checks },
+        undefined,
+        tx as any,
+      );
+
+      return result;
     });
 
     return {
@@ -502,7 +578,7 @@ export class InvestmentsService {
       );
     }
 
-    return this.paymentIntents.createCollectionIntent({
+    const result = await this.paymentIntents.createCollectionIntent({
       amount: investment.amount.toString(),
       currency: investment.currency,
       customerEmail: investment.investor.email,
@@ -515,7 +591,36 @@ export class InvestmentsService {
       tenantId: user.tenantId,
       userId: user.id,
       paymentMethod: investment.paymentMethod ?? undefined,
+    }) as CreateCollectionIntentResult;
+
+    await this.outbox.create(this.prisma as any, {
+      tenantId: investment.tenantId,
+      topic: "payment.intent_created",
+      eventType: "payment.intent_created",
+      aggregateType: "investment",
+      aggregateId: id,
+      payload: {
+        investmentId: id,
+        amount: investment.amount.toString(),
+        currency: investment.currency,
+        userId: user.id,
+      },
     });
+
+    await this.audit.record({
+      tenantId: investment.tenantId,
+      userId: user.id,
+      action: "payment.intent_created",
+      entityType: "investment",
+      entityId: id,
+      metadata: {
+        amount: investment.amount.toString(),
+        currency: investment.currency,
+        paymentProvider: result.provider ?? null,
+      },
+    });
+
+    return result;
   }
 
   async getPortfolio(
@@ -624,9 +729,9 @@ export class InvestmentsService {
         metadata:
           type === TransactionType.WITHDRAWAL
             ? {
-                bankDetails: (dto as WithdrawalDto).bankDetails ?? null,
-                note: (dto as WithdrawalDto).note ?? null,
-              }
+              bankDetails: (dto as WithdrawalDto).bankDetails ?? null,
+              note: (dto as WithdrawalDto).note ?? null,
+            }
             : undefined,
       },
     });
@@ -925,7 +1030,7 @@ export class InvestmentsService {
 @ApiBearerAuth()
 @Controller("investments")
 class InvestmentsController {
-  constructor(private readonly investmentsService: InvestmentsService) {}
+  constructor(private readonly investmentsService: InvestmentsService) { }
 
   @Get("portfolio")
   @Roles(PlatformRole.INVESTOR)
@@ -1018,8 +1123,8 @@ class InvestmentsController {
 
   @Post(":id/confirm")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  confirm(@Param("id") id: string): Promise<unknown> {
-    return this.investmentsService.confirm(id);
+  confirm(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
+    return this.investmentsService.confirm(id, user);
   }
 
   @Post(":id/compliance-check")
@@ -1045,7 +1150,7 @@ class InvestmentsController {
 @ApiBearerAuth()
 @Controller("transactions")
 class TransactionsController {
-  constructor(private readonly investmentsService: InvestmentsService) {}
+  constructor(private readonly investmentsService: InvestmentsService) { }
 
   @Get("stats")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
@@ -1172,4 +1277,4 @@ class TransactionsController {
   providers: [InvestmentsService],
   exports: [InvestmentsService],
 })
-export class InvestmentsModule {}
+export class InvestmentsModule { }

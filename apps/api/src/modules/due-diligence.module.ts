@@ -36,7 +36,9 @@ import {
   Roles,
   toPaginationMeta,
 } from "@evzone/common";
-import { PrismaService } from "@evzone/database";
+import { PrismaService, TransactionService } from "@evzone/database";
+import { AuditService } from "@evzone/audit";
+import { OutboxService } from "@evzone/events";
 
 class EngagementFilterDto extends PaginationDto {
   @IsOptional()
@@ -206,7 +208,12 @@ class AssessorFilterDto extends PaginationDto {
 
 @Injectable()
 class DueDiligenceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly transactions: TransactionService,
+    private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
+  ) {}
 
   async createEngagement(dto: CreateEngagementDto): Promise<unknown> {
     const project = await this.prisma.project.findUnique({
@@ -238,31 +245,52 @@ class DueDiligenceService {
         "Project already has an active due diligence case",
       );
     }
-    const created = await this.prisma.dueDiligenceCase.upsert({
-      where: { projectId: project.id },
-      create: {
+    const created = await this.transactions.run(async (tx) => {
+      const result = await tx.dueDiligenceCase.upsert({
+        where: { projectId: project.id },
+        create: {
+          tenantId: project.tenantId,
+          projectId: project.id,
+          assignedAssessorId: assessor.id,
+          status: DueDiligenceStatus.ASSIGNED,
+          dueAt: new Date(dto.dueDate),
+          assignedAt: new Date(),
+          notes: dto.notes,
+        },
+        update: {
+          assignedAssessorId: assessor.id,
+          status: DueDiligenceStatus.ASSIGNED,
+          dueAt: new Date(dto.dueDate),
+          assignedAt: new Date(),
+          notes: dto.notes,
+        },
+        include: {
+          project: true,
+          assignedAssessor: { include: { user: true } },
+          tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
+        },
+      });
+      await this.outbox.create(tx, {
         tenantId: project.tenantId,
-        projectId: project.id,
-        assignedAssessorId: assessor.id,
-        status: DueDiligenceStatus.ASSIGNED,
-        dueAt: new Date(dto.dueDate),
-        assignedAt: new Date(),
-        notes: dto.notes,
-      },
-      update: {
-        assignedAssessorId: assessor.id,
-        status: DueDiligenceStatus.ASSIGNED,
-        dueAt: new Date(dto.dueDate),
-        assignedAt: new Date(),
-        notes: dto.notes,
-      },
-      include: {
-        project: true,
-        assignedAssessor: { include: { user: true } },
-        tasks: true,
-        evidenceDocuments: true,
-        evidenceMedia: true,
-      },
+        topic: "due_diligence.assigned",
+        eventType: "due_diligence.assigned",
+        aggregateType: "due_diligence",
+        aggregateId: result.id,
+        payload: { caseId: result.id, projectId: project.id, assessorId: assessor.id },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: assessor },
+        "due_diligence.assigned",
+        "due_diligence",
+        result.id,
+        undefined,
+        { status: DueDiligenceStatus.ASSIGNED, assessorId: assessor.id },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toEngagementResponse(created);
   }
@@ -342,20 +370,41 @@ class DueDiligenceService {
         "Assessors cannot approve or reject due diligence",
       );
     }
-    const updated = await this.prisma.dueDiligenceCase.update({
-      where: { id },
-      data: {
-        status,
-        notes: dto.notes,
-        assessments: this.mergeAssessments(engagement.assessments, dto),
-      },
-      include: {
-        project: true,
-        assignedAssessor: { include: { user: true } },
-        tasks: true,
-        evidenceDocuments: true,
-        evidenceMedia: true,
-      },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.dueDiligenceCase.update({
+        where: { id },
+        data: {
+          status,
+          notes: dto.notes,
+          assessments: this.mergeAssessments(engagement.assessments, dto),
+        },
+        include: {
+          project: true,
+          assignedAssessor: { include: { user: true } },
+          tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
+        },
+      });
+      await this.outbox.create(tx, {
+        tenantId: engagement.tenantId,
+        topic: "due_diligence.status_changed",
+        eventType: "due_diligence.status_changed",
+        aggregateType: "due_diligence",
+        aggregateId: id,
+        payload: { caseId: id, status },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: engagement.assignedAssessor?.user },
+        "due_diligence.status_changed",
+        "due_diligence",
+        id,
+        { status: engagement.status },
+        { status },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toEngagementResponse(updated);
   }
@@ -368,16 +417,37 @@ class DueDiligenceService {
       throw new BadRequestException(
         `Cannot start engagement with status: ${engagement.status}`,
       );
-    const updated = await this.prisma.dueDiligenceCase.update({
-      where: { id },
-      data: { status: DueDiligenceStatus.IN_PROGRESS, startedAt: new Date() },
-      include: {
-        project: true,
-        assignedAssessor: { include: { user: true } },
-        tasks: true,
-        evidenceDocuments: true,
-        evidenceMedia: true,
-      },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.dueDiligenceCase.update({
+        where: { id },
+        data: { status: DueDiligenceStatus.IN_PROGRESS, startedAt: new Date() },
+        include: {
+          project: true,
+          assignedAssessor: { include: { user: true } },
+          tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
+        },
+      });
+      await this.outbox.create(tx, {
+        tenantId: engagement.tenantId,
+        topic: "due_diligence.started",
+        eventType: "due_diligence.started",
+        aggregateType: "due_diligence",
+        aggregateId: id,
+        payload: { caseId: id, assessorId },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: engagement.assignedAssessor?.user },
+        "due_diligence.started",
+        "due_diligence",
+        id,
+        { status: engagement.status },
+        { status: DueDiligenceStatus.IN_PROGRESS },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toEngagementResponse(updated);
   }
@@ -400,24 +470,45 @@ class DueDiligenceService {
         `Cannot submit report for engagement with status: ${engagement.status}`,
       );
     }
-    const updated = await this.prisma.dueDiligenceCase.update({
-      where: { id },
-      data: {
-        status: DueDiligenceStatus.QUALITY_REVIEW,
-        submittedAt: new Date(),
-        riskScore: dto.overallScore,
-        riskRating: dto.riskLevel,
-        notes: dto.notes,
-        assessments: this.mergeAssessments(engagement.assessments, dto),
-        finalReportDocumentId: this.extractDocumentId(dto.reportDocuments),
-      },
-      include: {
-        project: true,
-        assignedAssessor: { include: { user: true } },
-        tasks: true,
-        evidenceDocuments: true,
-        evidenceMedia: true,
-      },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.dueDiligenceCase.update({
+        where: { id },
+        data: {
+          status: DueDiligenceStatus.QUALITY_REVIEW,
+          submittedAt: new Date(),
+          riskScore: dto.overallScore,
+          riskRating: dto.riskLevel,
+          notes: dto.notes,
+          assessments: this.mergeAssessments(engagement.assessments, dto),
+          finalReportDocumentId: this.extractDocumentId(dto.reportDocuments),
+        },
+        include: {
+          project: true,
+          assignedAssessor: { include: { user: true } },
+          tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
+        },
+      });
+      await this.outbox.create(tx, {
+        tenantId: engagement.tenantId,
+        topic: "due_diligence.completed",
+        eventType: "due_diligence.completed",
+        aggregateType: "due_diligence",
+        aggregateId: id,
+        payload: { caseId: id, riskScore: dto.overallScore },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: engagement.assignedAssessor?.user },
+        "due_diligence.completed",
+        "due_diligence",
+        id,
+        { status: engagement.status },
+        { status: DueDiligenceStatus.QUALITY_REVIEW },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toEngagementResponse(updated);
   }
@@ -432,16 +523,40 @@ class DueDiligenceService {
         "Review status must resolve to APPROVED or REJECTED",
       );
     }
-    const updated = await this.prisma.dueDiligenceCase.update({
-      where: { id },
-      data: { status, reviewedAt: new Date(), notes: dto.notes },
-      include: {
-        project: true,
-        assignedAssessor: { include: { user: true } },
-        tasks: true,
-        evidenceDocuments: true,
-        evidenceMedia: true,
-      },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.dueDiligenceCase.update({
+        where: { id },
+        data: { status, reviewedAt: new Date(), notes: dto.notes },
+        include: {
+          project: true,
+          assignedAssessor: { include: { user: true } },
+          tasks: true,
+          evidenceDocuments: true,
+          evidenceMedia: true,
+        },
+      });
+      const eventType = status === DueDiligenceStatus.APPROVED
+        ? "due_diligence.approved"
+        : "due_diligence.rejected";
+      await this.outbox.create(tx, {
+        tenantId: result.tenantId,
+        topic: eventType,
+        eventType,
+        aggregateType: "due_diligence",
+        aggregateId: id,
+        payload: { caseId: id, status },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: result.assignedAssessor?.user },
+        eventType,
+        "due_diligence",
+        id,
+        { status: result.status },
+        { status },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toEngagementResponse(updated);
   }

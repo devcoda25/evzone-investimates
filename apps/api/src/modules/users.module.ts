@@ -30,6 +30,8 @@ import {
 import { OwnerOrAdminGuard } from "@evzone/auth";
 import { PrismaService } from "@evzone/database";
 import { PermissionsService } from "@evzone/permissions";
+import { AuditService } from "@evzone/audit";
+import { OutboxService } from "@evzone/events";
 
 interface UserResponse {
   id: string;
@@ -224,6 +226,8 @@ class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async findAll(
@@ -395,6 +399,13 @@ class UsersService {
       where: { id },
       data: { deletedAt: new Date(), status: UserStatus.BLOCKED },
     });
+    await this.audit.record({
+      tenantId: undefined,
+      userId: id,
+      action: "user.soft_deleted",
+      entityType: "user",
+      entityId: id,
+    });
   }
 
   async submitKyc(
@@ -421,6 +432,21 @@ class UsersService {
         assessorProfile: true,
       },
     });
+    await this.audit.record({
+      tenantId: currentUser.tenantId,
+      userId: currentUser.id,
+      action: "kyc.submitted",
+      entityType: "user",
+      entityId: id,
+    });
+    await this.outbox.create(this.prisma, {
+      tenantId: currentUser.tenantId,
+      topic: "kyc.submitted",
+      eventType: "kyc.submitted",
+      aggregateType: "user",
+      aggregateId: id,
+      payload: { userId: id, kycStatus: KycStatus.PENDING },
+    });
     return this.toResponse(updated);
   }
 
@@ -434,6 +460,22 @@ class UsersService {
         entrepreneurProfile: true,
         assessorProfile: true,
       },
+    });
+    await this.audit.record({
+      tenantId: updated.memberships?.[0]?.tenantId,
+      userId: id,
+      action: "kyc.verified",
+      entityType: "user",
+      entityId: id,
+      metadata: { status: dto.status, notes: dto.notes },
+    });
+    await this.outbox.create(this.prisma, {
+      tenantId: updated.memberships?.[0]?.tenantId,
+      topic: "kyc.verified",
+      eventType: "kyc.verified",
+      aggregateType: "user",
+      aggregateId: id,
+      payload: { userId: id, kycStatus: dto.status },
     });
     return this.toResponse(updated);
   }
@@ -449,19 +491,44 @@ class UsersService {
         assessorProfile: true,
       },
     });
+    await this.audit.record({
+      tenantId: updated.memberships?.[0]?.tenantId,
+      userId: id,
+      action: "user.suspended",
+      entityType: "user",
+      entityId: id,
+    });
     return this.toResponse(updated);
   }
 
   async unsuspend(id: string): Promise<UserResponse> {
-    const updated = await this.prisma.user.update({
-      where: { id },
-      data: { status: UserStatus.ACTIVE },
-      include: {
-        memberships: true,
-        investorProfile: true,
-        entrepreneurProfile: true,
-        assessorProfile: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id },
+        data: { status: UserStatus.ACTIVE },
+        include: {
+          memberships: true,
+          investorProfile: true,
+          entrepreneurProfile: true,
+          assessorProfile: true,
+        },
+      });
+      await this.audit.record({
+        tenantId: result.memberships?.[0]?.tenantId,
+        userId: id,
+        action: "user.unsuspended",
+        entityType: "user",
+        entityId: id,
+      });
+      await this.outbox.create(tx, {
+        tenantId: result.memberships?.[0]?.tenantId ?? "",
+        topic: "user.unsuspended",
+        eventType: "user.unsuspended",
+        aggregateType: "user",
+        aggregateId: id,
+        payload: { userId: id, status: UserStatus.ACTIVE },
+      });
+      return result;
     });
     return this.toResponse(updated);
   }

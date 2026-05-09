@@ -951,31 +951,32 @@ export class AdminService {
 
   // ============= Entrepreneur Disputes =============
 
-  async findMyDisputes(
-    user: AuthenticatedUser,
-    filter: DisputeFilterDto,
-  ): Promise<PaginatedResponse<unknown>> {
-    const page = getPage(filter);
-    const limit = getLimit(filter);
-    const where: Prisma.DisputeWhereInput = {
-      tenantId: user.tenantId,
-      initiatorId: user.id,
-      ...(filter.type ? { type: filter.type } : {}),
-      ...(filter.status ? { status: filter.status } : {}),
-    };
+   async findMyDisputes(
+     user: AuthenticatedUser,
+     filter: DisputeFilterDto,
+   ): Promise<PaginatedResponse<unknown>> {
+     const page = getPage(filter);
+     const limit = getLimit(filter);
+     const where: Prisma.DisputeWhereInput = {
+       tenantId: user.tenantId,
+       initiatorId: user.id,
+       ...(filter.type ? { type: filter.type } : {}),
+       ...(filter.status ? { status: filter.status } : {}),
+     };
 
-    const [items, total] = await Promise.all([
-      this.prisma.dispute.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.dispute.count({ where }),
-    ]);
+     const [items, total] = await Promise.all([
+       this.prisma.dispute.findMany({
+         where,
+         include: { initiator: true },
+         orderBy: { createdAt: "desc" },
+         skip: (page - 1) * limit,
+         take: limit,
+       }),
+       this.prisma.dispute.count({ where }),
+     ]);
 
-    return { data: items, meta: toPaginationMeta(page, limit, total) };
-  }
+     return { data: items, meta: toPaginationMeta(page, limit, total) };
+   }
 
   async findMyDisputeById(
     id: string,

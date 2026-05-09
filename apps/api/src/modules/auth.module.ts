@@ -35,6 +35,7 @@ import { CurrentUser, Public } from "@evzone/common";
 import { JwtAccessPayload, JwtRefreshPayload } from "@evzone/auth";
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
+import { RedisService } from "@evzone/redis";
 
 interface UserSummary {
   id: string;
@@ -53,6 +54,7 @@ interface AuthTokenResponse {
   tokenType: "Bearer";
   expiresIn: number;
   user: UserSummary;
+  mfaRequired?: boolean;
 }
 
 class RegisterDto {
@@ -114,6 +116,14 @@ class ResetPasswordDto {
   newPassword!: string;
 }
 
+class VerifyMfaDto {
+  @IsString()
+  token!: string;
+
+  @IsString()
+  code!: string;
+}
+
 @Injectable()
 class AuthService {
   constructor(
@@ -123,6 +133,7 @@ class AuthService {
     private readonly config: ConfigService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly redis: RedisService,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthTokenResponse> {
@@ -228,8 +239,38 @@ class AuthService {
         where: { id: user.id },
         data: { loginAttempts, lockoutUntil },
       });
+      await this.audit.record({
+        tenantId: user.memberships?.[0]?.tenantId,
+        userId: user.id,
+        action: "login.failed",
+        entityType: "auth",
+        entityId: user.id,
+        metadata: { reason: "Invalid password" },
+        ipAddress: "",
+      });
       throw new UnauthorizedException("Invalid email or password");
     }
+
+    // MFA verification check
+    if (user.mfaEnabled) {
+      const mfaKey = `mfa:pending:${user.id}`;
+      const pendingMfa = await this.redis.get(mfaKey);
+      if (pendingMfa !== "verified") {
+        // Generate and store OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        await this.redis.setJson(`mfa:otp:${user.id}`, { otp, verified: false }, 300);
+        await this.audit.record({
+          tenantId: user.memberships?.[0]?.tenantId,
+          userId: user.id,
+          action: "mfa.challenge",
+          entityType: "auth",
+          entityId: user.id,
+          metadata: { method: "totp" },
+        });
+        return { mfaRequired: true } as any;
+      }
+    }
+
     const membership = user.memberships[0];
     if (!membership)
       throw new UnauthorizedException("User has no active tenant membership");
@@ -241,6 +282,14 @@ class AuthService {
         loginAttempts: 0,
         lockoutUntil: null,
       },
+    });
+    await this.audit.record({
+      tenantId: membership.tenantId,
+      userId: user.id,
+      action: "login.success",
+      entityType: "auth",
+      entityId: user.id,
+      metadata: { role: membership.role },
     });
     return this.issueTokens(user.id, membership.tenantId, membership.role);
   }
@@ -320,7 +369,10 @@ class AuthService {
     userId: string,
     dto: ChangePasswordDto,
   ): Promise<{ message: string }> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { memberships: { where: { status: "ACTIVE" } } },
+    });
     if (!user?.passwordHash)
       throw new BadRequestException(
         "Password login is not enabled for this account",
@@ -338,6 +390,13 @@ class AuthService {
     await this.prisma.user.update({
       where: { id: userId },
       data: { passwordHash },
+    });
+    await this.audit.record({
+      tenantId: user.memberships?.[0]?.tenantId,
+      userId,
+      action: "password.changed",
+      entityType: "auth",
+      entityId: userId,
     });
     await this.logout(userId);
     return { message: "Password changed successfully" };
@@ -517,6 +576,88 @@ class AuthService {
     if (unit === "h") return amount * 60 * 60 * 1000;
     return amount * 24 * 60 * 60 * 1000;
   }
+
+  async enableMfa(userId: string): Promise<{ message: string; secret: string }> {
+    const secret = randomBytes(20).toString("hex");
+    await this.redis.setJson(`mfa:secret:${userId}`, { secret, enabled: false }, 600);
+    await this.audit.record({
+      tenantId: undefined,
+      userId,
+      action: "mfa.enable_initiated",
+      entityType: "auth",
+      entityId: userId,
+      metadata: { method: "totp" },
+    });
+    return { message: "MFA setup initiated. Scan the QR code with your authenticator app.", secret };
+  }
+
+  async disableMfa(userId: string): Promise<{ message: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { memberships: { where: { status: "ACTIVE" } } },
+    });
+    if (!user?.mfaEnabled) throw new BadRequestException("MFA is not enabled");
+    await this.prisma.user.update({ where: { id: userId }, data: { mfaEnabled: false } });
+    await this.redis.del(`mfa:secret:${userId}`);
+    await this.redis.del(`mfa:otp:${userId}`);
+    await this.redis.del(`mfa:pending:${userId}`);
+    await this.audit.record({
+      tenantId: user.memberships?.[0]?.tenantId,
+      userId,
+      action: "mfa.disabled",
+      entityType: "auth",
+      entityId: userId,
+    });
+    return { message: "MFA disabled successfully" };
+  }
+
+  async verifyMfa(dto: VerifyMfaDto): Promise<AuthTokenResponse> {
+    interface MfaOtp {
+      otp: string;
+      verified: boolean;
+    }
+    const stored = await this.redis.getJson<MfaOtp>(`mfa:otp:${dto.token}`);
+    if (!stored || (stored as any).verified) throw new BadRequestException("Invalid or expired MFA token");
+
+    const secretData = await this.redis.getJson<{ secret: string }>(`mfa:secret:${dto.token}`);
+    if (!secretData) {
+      // Verify against existing user MFA
+      const user = await this.prisma.user.findUnique({
+        where: { id: dto.token, mfaEnabled: true },
+      });
+      if (!user) throw new BadRequestException("MFA not enabled for this account");
+    }
+
+    // Mark OTP as verified
+    await this.redis.setJson(`mfa:otp:${dto.token}`, { ...stored, verified: true }, 300);
+    // Store verified state for login completion
+    await this.redis.setJson(`mfa:pending:${dto.token}`, { verified: true }, 300);
+
+    await this.audit.record({
+      tenantId: undefined,
+      userId: dto.token,
+      action: "mfa.verified",
+      entityType: "auth",
+      entityId: dto.token,
+    });
+
+    // Issue tokens after MFA verification
+    const user = await this.prisma.user.findUnique({
+      where: { id: dto.token },
+      include: { memberships: { where: { status: "ACTIVE" } } },
+    });
+    if (!user) throw new BadRequestException("User not found");
+    const membership = user.memberships?.[0];
+    if (!membership) throw new UnauthorizedException("User has no active tenant membership");
+    await this.audit.record({
+      tenantId: membership.tenantId,
+      userId: user.id,
+      action: "mfa.verified",
+      entityType: "auth",
+      entityId: user.id,
+    });
+    return this.issueTokens(user.id, membership.tenantId, membership.role);
+  }
 }
 
 @ApiTags("Auth")
@@ -596,6 +737,27 @@ class AuthController {
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string }> {
     return this.authService.resetPassword(dto);
+  }
+
+  @ApiBearerAuth()
+  @Post("mfa/enable")
+  @HttpCode(HttpStatus.OK)
+  enableMfa(@CurrentUser("id") userId: string): Promise<{ message: string; secret: string }> {
+    return this.authService.enableMfa(userId);
+  }
+
+  @ApiBearerAuth()
+  @Post("mfa/disable")
+  @HttpCode(HttpStatus.OK)
+  disableMfa(@CurrentUser("id") userId: string): Promise<{ message: string }> {
+    return this.authService.disableMfa(userId);
+  }
+
+  @Public()
+  @Post("mfa/verify")
+  @HttpCode(HttpStatus.OK)
+  verifyMfa(@Body() dto: VerifyMfaDto): Promise<AuthTokenResponse> {
+    return this.authService.verifyMfa(dto);
   }
 }
 

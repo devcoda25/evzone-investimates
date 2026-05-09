@@ -51,6 +51,7 @@ import {
 } from "@evzone/common";
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
+import { AuditService } from "@evzone/audit";
 import { PermissionsService } from "@evzone/permissions";
 import { StorageService, SignedUploadIntent } from "@evzone/storage";
 
@@ -392,6 +393,7 @@ export class ProjectsService {
     private readonly outbox: OutboxService,
     private readonly permissions: PermissionsService,
     private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
   async create(
@@ -450,6 +452,16 @@ export class ProjectsService {
         aggregateId: created.id,
         payload: { projectId: created.id, ownerUserId: owner.id },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: owner },
+        "project.created",
+        "project",
+        created.id,
+        undefined,
+        { title: created.title, status: created.status },
+        undefined,
+        tx as any,
+      );
       return created;
     });
     return this.toResponse(project);
@@ -585,31 +597,57 @@ export class ProjectsService {
       throw new ForbiddenException("You can only submit your own projects");
     if (project.status !== ProjectStatus.DRAFT)
       throw new BadRequestException("Only draft projects can be submitted");
-    const updated = await this.transitionProject(
-      id,
-      ProjectStatus.UNDER_REVIEW,
-      user.tenantId,
-      "project.submitted",
-    );
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.project.update({
+        where: { id },
+        data: { status: ProjectStatus.UNDER_REVIEW },
+        include: { gallery: true, dueDiligence: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: user.tenantId,
+        topic: "project.submitted",
+        eventType: "project.submitted",
+        aggregateType: "project",
+        aggregateId: id,
+        payload: { projectId: id },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "project.submitted",
+        "project",
+        id,
+        { status: project.status },
+        { status: ProjectStatus.UNDER_REVIEW },
+        undefined,
+        tx as any,
+      );
+      return result;
+    });
     return this.toResponse(updated);
   }
 
   async approve(id: string, user: AuthenticatedUser): Promise<ProjectResponse> {
+    const project = await this.getProjectForAccess(id, user);
     const updated = await this.transitionProject(
       id,
       ProjectStatus.ACTIVE,
       user.tenantId,
       "project.approved",
+      user,
+      project.status,
     );
     return this.toResponse(updated);
   }
 
   async reject(id: string, user: AuthenticatedUser): Promise<ProjectResponse> {
+    const project = await this.getProjectForAccess(id, user);
     const updated = await this.transitionProject(
       id,
       ProjectStatus.REJECTED,
       user.tenantId,
       "project.rejected",
+      user,
+      project.status,
     );
     return this.toResponse(updated);
   }
@@ -727,6 +765,16 @@ export class ProjectsService {
         aggregateId: id,
         payload: { projectId: id, status: ProjectStatus.LISTED },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "project.published",
+        "project",
+        id,
+        { status: project.status },
+        { status: ProjectStatus.LISTED },
+        undefined,
+        tx as any,
+      );
       return result;
     });
     return this.toResponse(updated);
@@ -755,45 +803,55 @@ export class ProjectsService {
   }
 
   async createDocument(
-    projectId: string,
-    dto: CreateProjectDocumentDto,
-    user: AuthenticatedUser,
-  ): Promise<{ documentId: string; bucket: string; objectKey: string; uploadUrl: string; expiresInSeconds: number; status: MediaStatus }> {
-    const project = await this.getProjectForAccess(projectId, user);
-    this.permissions.assertOwnerOrAdmin(user, project.ownerUserId);
-    const documentId = cryptoRandomId();
-    const objectKey = this.storage.buildObjectKey(
-      ["tenants", project.tenantId, "projects", project.id, "documents", documentId],
-      dto.fileName,
-    );
-    const intent = await this.storage.createUploadIntent(
-      objectKey,
-      dto.contentType,
-    );
-    await this.prisma.document.create({
-      data: {
-        id: documentId,
-        tenantId: project.tenantId,
-        ownerUserId: user.id,
-        projectId,
-        originalName: dto.fileName,
-        contentType: dto.contentType,
-        sizeBytes: dto.sizeBytes,
-        bucket: intent.bucket,
-        objectKey: intent.objectKey,
-        purpose: dto.purpose ?? DocumentPurpose.GENERAL,
-        status: MediaStatus.PENDING_UPLOAD,
-      },
-    });
-    return {
-      documentId,
-      bucket: intent.bucket,
-      objectKey: intent.objectKey,
-      uploadUrl: intent.uploadUrl,
-      expiresInSeconds: intent.expiresInSeconds,
-      status: MediaStatus.PENDING_UPLOAD,
-    };
-  }
+     projectId: string,
+     dto: CreateProjectDocumentDto,
+     user: AuthenticatedUser,
+   ): Promise<{ documentId: string; bucket: string; objectKey: string; uploadUrl: string; expiresInSeconds: number; status: MediaStatus }> {
+     const project = await this.getProjectForAccess(projectId, user);
+     this.permissions.assertOwnerOrAdmin(user, project.ownerUserId);
+     const documentId = cryptoRandomId();
+     const objectKey = this.storage.buildObjectKey(
+       ["tenants", project.tenantId, "projects", project.id, "documents", documentId],
+       dto.fileName,
+     );
+     const intent = await this.storage.createUploadIntent(
+       objectKey,
+       dto.contentType,
+     );
+     await this.prisma.document.create({
+       data: {
+         id: documentId,
+         tenantId: project.tenantId,
+         ownerUserId: user.id,
+         projectId,
+         originalName: dto.fileName,
+         contentType: dto.contentType,
+         sizeBytes: dto.sizeBytes,
+         bucket: intent.bucket,
+         objectKey: intent.objectKey,
+         purpose: dto.purpose ?? DocumentPurpose.GENERAL,
+         status: MediaStatus.PENDING_UPLOAD,
+       },
+     });
+     return {
+       documentId,
+       bucket: intent.bucket,
+       objectKey: intent.objectKey,
+       uploadUrl: intent.uploadUrl,
+       expiresInSeconds: intent.expiresInSeconds,
+       status: MediaStatus.PENDING_UPLOAD,
+     };
+   }
+
+   async getSignedUrl(projectId: string, mediaId: string, user: AuthenticatedUser): Promise<{ signedUrl: string; expiresInSeconds: number }> {
+     const project = await this.getProjectForAccess(projectId, user);
+     const media = await this.prisma.mediaAsset.findUnique({
+       where: { id: mediaId, projectId },
+     });
+     if (!media) throw new NotFoundException("Media asset not found");
+     const signedUrl = await this.storage.createReadUrl(media.objectKey);
+     return { signedUrl, expiresInSeconds: 900 };
+   }
 
   async removeMilestone(id: string, user: AuthenticatedUser): Promise<void> {
     const milestone = await this.prisma.milestone.findUnique({
@@ -996,6 +1054,8 @@ export class ProjectsService {
     status: ProjectStatus,
     tenantId: string,
     eventType: string,
+    user: AuthenticatedUser,
+    oldStatus: ProjectStatus,
   ): Promise<
     Prisma.ProjectGetPayload<{ include: { gallery: true; dueDiligence: true } }>
   > {
@@ -1013,6 +1073,16 @@ export class ProjectsService {
         aggregateId: id,
         payload: { projectId: id, status },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        eventType,
+        "project",
+        id,
+        { status: oldStatus },
+        { status },
+        undefined,
+        tx as any,
+      );
       return updated;
     });
   }
@@ -1487,6 +1557,16 @@ class ProjectsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ProjectResponse> {
     return this.projectsService.publish(id, user);
+  }
+
+  @Get(":id/gallery/:mediaId/signed-url")
+  @Roles(PlatformRole.ENTREPRENEUR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getSignedUrl(
+    @Param("id") projectId: string,
+    @Param("mediaId") mediaId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ signedUrl: string; expiresInSeconds: number }> {
+    return this.projectsService.getSignedUrl(projectId, mediaId, user);
   }
 
 }

@@ -25,6 +25,11 @@ export class RedisService implements OnModuleDestroy {
     return this.client.get(key);
   }
 
+  async getJson<T>(key: string): Promise<T | null> {
+    const value = await this.client.get(key);
+    return value ? JSON.parse(value) : null;
+  }
+
   async setJson(
     key: string,
     value: unknown,
@@ -52,5 +57,9 @@ export class RedisService implements OnModuleDestroy {
 
   async del(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  async getClient(): Promise<Redis> {
+    return this.client;
   }
 }

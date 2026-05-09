@@ -28,6 +28,8 @@
       "@evzone/redis": ["libs/redis/src/index.ts"],
       "@evzone/storage": ["libs/storage/src/index.ts"],
       "@evzone/audit": ["libs/audit/src/index.ts"],
+      "@evzone/encryption": ["libs/encryption/src/index.ts"],
+      "@evzone/impact": ["libs/impact/src/index.ts"],
       "@evzone/notifications": ["libs/notifications/src/index.ts"]
     }
   },

@@ -33,6 +33,23 @@ export class OutboxService {
     });
   }
 
+  async createMany(
+    tx: Prisma.TransactionClient | PrismaService,
+    inputs: DomainEventInput[],
+  ): Promise<void> {
+    await tx.outboxEvent.createMany({
+      data: inputs.map((input) => ({
+        tenantId: input.tenantId,
+        topic: input.topic,
+        eventType: input.eventType,
+        aggregateType: input.aggregateType,
+        aggregateId: input.aggregateId,
+        eventKey: `${input.eventType}:${input.aggregateId}:${randomUUID()}`,
+        payload: input.payload,
+      })),
+    });
+  }
+
   async findPending(limit: number): Promise<PendingOutboxEvent[]> {
     const now = new Date();
     return this.prisma.outboxEvent.findMany({
