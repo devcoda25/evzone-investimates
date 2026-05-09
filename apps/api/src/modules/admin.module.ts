@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
@@ -39,9 +40,10 @@ import {
   AuthenticatedUser,
 } from "@evzone/common";
 import { PrismaService } from "@evzone/database";
+import { JwtAuthGuard, RolesGuard } from "@evzone/auth";
 import { PermissionsService } from "@evzone/permissions";
 
-class AlertFilterDto extends PaginationDto {
+export class AlertFilterDto extends PaginationDto {
   @IsOptional()
   @IsEnum(ComplianceAlertType)
   type?: ComplianceAlertType;
@@ -55,7 +57,7 @@ class AlertFilterDto extends PaginationDto {
   status?: ComplianceAlertStatus;
 }
 
-class ResolveAlertDto {
+export class ResolveAlertDto {
   @IsEnum(ComplianceAlertStatus)
   status!: ComplianceAlertStatus;
 
@@ -98,7 +100,7 @@ class AuditLogFilterDto extends PaginationDto {
   userId?: string;
 }
 
-class ReportDateRangeDto {
+export class ReportDateRangeDto {
   @IsOptional()
   @IsISO8601()
   startDate?: string;
@@ -125,7 +127,7 @@ class RiskAssessmentDto {
 }
 
 @Injectable()
-class AdminService {
+export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
@@ -946,6 +948,91 @@ class AdminService {
       netBalance: report.reduce((sum, r) => sum + r.balance, 0),
     };
   }
+
+  // ============= Entrepreneur Disputes =============
+
+  async findMyDisputes(
+    user: AuthenticatedUser,
+    filter: DisputeFilterDto,
+  ): Promise<PaginatedResponse<unknown>> {
+    const page = getPage(filter);
+    const limit = getLimit(filter);
+    const where: Prisma.DisputeWhereInput = {
+      tenantId: user.tenantId,
+      initiatorId: user.id,
+      ...(filter.type ? { type: filter.type } : {}),
+      ...(filter.status ? { status: filter.status } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.dispute.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.dispute.count({ where }),
+    ]);
+
+    return { data: items, meta: toPaginationMeta(page, limit, total) };
+  }
+
+  async findMyDisputeById(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<unknown> {
+    const dispute = await this.prisma.dispute.findFirst({
+      where: { id, tenantId: user.tenantId, initiatorId: user.id },
+    });
+    if (!dispute) throw new NotFoundException("Dispute not found");
+    return dispute;
+  }
+
+  async createDispute(
+    user: AuthenticatedUser,
+    dto: {
+      type: DisputeType;
+      title: string;
+      description: string;
+      entityType?: string;
+      entityId?: string;
+      evidence?: Prisma.InputJsonValue;
+    },
+  ): Promise<unknown> {
+    return this.prisma.dispute.create({
+      data: {
+        tenantId: user.tenantId,
+        type: dto.type,
+        status: DisputeStatus.OPEN,
+        title: dto.title,
+        description: dto.description,
+        initiatorId: user.id,
+        entityType: dto.entityType,
+        entityId: dto.entityId,
+        evidence: dto.evidence,
+      },
+    });
+  }
+
+  async updateMyDispute(
+    id: string,
+    user: AuthenticatedUser,
+    dto: ResolveDisputeDto,
+  ): Promise<unknown> {
+    const dispute = await this.prisma.dispute.findFirst({
+      where: { id, tenantId: user.tenantId, initiatorId: user.id },
+    });
+    if (!dispute) throw new NotFoundException("Dispute not found");
+
+    return this.prisma.dispute.update({
+      where: { id },
+      data: {
+        ...(dto.status ? { status: dto.status } : {}),
+        ...(dto.resolution ? { resolution: dto.resolution } : {}),
+        ...(dto.status === DisputeStatus.RESOLVED ? { resolvedAt: new Date() } : {}),
+      },
+    });
+  }
 }
 
 @ApiTags("Admin")
@@ -964,34 +1051,6 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Record<string, unknown>> {
     return this.adminService.getDashboard(user);
-  }
-
-  @Get("compliance/alerts")
-  findAlerts(
-    @Query() filter: AlertFilterDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<PaginatedResponse<unknown>> {
-    return this.adminService.findAlerts(filter, user);
-  }
-
-  @Get("compliance/alerts/:id")
-  findAlertById(@Param("id") id: string): Promise<unknown> {
-    return this.adminService.findAlertById(id);
-  }
-
-  @Patch("compliance/alerts/:id")
-  updateAlert(
-    @Param("id") id: string,
-    @Body() dto: ResolveAlertDto,
-  ): Promise<unknown> {
-    return this.adminService.updateAlert(id, dto);
-  }
-
-  @Get("compliance/stats")
-  getComplianceStats(
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getComplianceStats(user);
   }
 
   @Get("risk/projects")
@@ -1112,51 +1171,51 @@ class AdminController {
     return this.adminService.findKycCases(user, status);
   }
 
-  // ============= Regulatory Reports =============
+}
 
-  @Get("compliance/reports/transaction-summary")
-  getTransactionSummaryReport(
-    @Query() dto: ReportDateRangeDto,
+@ApiTags("Disputes")
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Controller("disputes")
+class DisputesController {
+  constructor(private readonly adminService: AdminService) {}
+
+  @Get("my")
+  findMyDisputes(
+    @Query() filter: DisputeFilterDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getTransactionSummaryReport(user, dto);
+  ): Promise<PaginatedResponse<unknown>> {
+    return this.adminService.findMyDisputes(user, filter);
   }
 
-  @Get("compliance/reports/suspicious-activity")
-  getSuspiciousActivityReport(
-    @Query() dto: ReportDateRangeDto,
+  @Get("my/:id")
+  findMyDisputeById(
+    @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getSuspiciousActivityReport(user, dto);
+  ): Promise<unknown> {
+    return this.adminService.findMyDisputeById(id, user);
   }
 
-  @Get("compliance/reports/audit-trail")
-  getAuditTrailReport(
-    @Query() dto: ReportDateRangeDto,
+  @Post()
+  createDispute(
+    @Body() dto: { type: DisputeType; title: string; description: string; entityType?: string; entityId?: string; evidence?: Prisma.InputJsonValue },
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getAuditTrailReport(user, dto);
+  ): Promise<unknown> {
+    return this.adminService.createDispute(user, dto);
   }
 
-  @Get("compliance/reports/kyc-status")
-  getKycStatusReport(
-    @Query() dto: ReportDateRangeDto,
+  @Patch("my/:id")
+  updateMyDispute(
+    @Param("id") id: string,
+    @Body() dto: ResolveDisputeDto,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getKycStatusReport(user, dto);
-  }
-
-  @Get("compliance/reports/ledger-reconciliation")
-  getLedgerReconciliationReport(
-    @Query() dto: ReportDateRangeDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.getLedgerReconciliationReport(user, dto);
+  ): Promise<unknown> {
+    return this.adminService.updateMyDispute(id, user, dto);
   }
 }
 
 @Module({
-  controllers: [AdminController],
+  controllers: [AdminController, DisputesController],
   providers: [AdminService],
   exports: [AdminService],
 })

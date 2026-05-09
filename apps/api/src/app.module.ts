@@ -25,7 +25,10 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { WatchlistModule } from "./modules/watchlist.module";
 import { ActivityModule } from "./modules/activity.module";
 import { AiAdvisorModule } from "./modules/ai-advisor.module";
+import { ComplianceModule } from "./modules/compliance.module";
 import { VotesModule } from "./modules/votes.module";
+import { MediaModule } from "./modules/media.module";
+import { TenantsModule } from "./modules/tenants.module";
 
 @Module({
   imports: [
@@ -53,12 +56,15 @@ import { VotesModule } from "./modules/votes.module";
     AuditModule,
     PermissionsModule,
     ApiAuthModule,
+    TenantsModule,
     UsersModule,
     ProjectsModule,
+    MediaModule,
     DocumentsModule,
     InvestmentsModule,
     DueDiligenceModule,
     AdminModule,
+    ComplianceModule,
     NotificationsModule,
     MessagingModule,
     DealsModule,

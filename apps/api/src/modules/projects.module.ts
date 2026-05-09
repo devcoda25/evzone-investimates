@@ -234,6 +234,22 @@ class CreateProjectDto {
 
   @IsOptional()
   faqs?: Prisma.InputJsonValue;
+
+  @IsOptional()
+  @IsNumber()
+  valuation?: number;
+
+  @IsOptional()
+  @IsString()
+  structure?: string;
+
+  @IsOptional()
+  @IsNumber()
+  returnTarget?: number;
+
+  @IsOptional()
+  @IsNumber()
+  equityOffered?: number;
 }
 
 class UpdateProjectDto extends CreateProjectDto {
@@ -288,7 +304,7 @@ class UpdateMilestoneDto extends CreateMilestoneDto {
   status?: MilestoneStatus;
 }
 
-class CreateUploadIntentDto {
+export class CreateUploadIntentDto {
   @IsString()
   fileName!: string;
 
@@ -309,7 +325,7 @@ class CreateUploadIntentDto {
   purpose?: MediaPurpose;
 }
 
-class UpdateMediaDto {
+export class UpdateMediaDto {
   @IsOptional()
   @IsString()
   altText?: string;
@@ -324,12 +340,12 @@ class UpdateMediaDto {
   status?: MediaStatus;
 }
 
-class ReorderGalleryDto {
+export class ReorderGalleryDto {
   @IsArray()
   mediaIds!: string[];
 }
 
-class CreateProjectDocumentDto {
+export class CreateProjectDocumentDto {
   @IsString()
   fileName!: string;
 
@@ -346,7 +362,7 @@ class CreateProjectDocumentDto {
   purpose?: DocumentPurpose;
 }
 
-interface ProjectDocumentResponse {
+export interface ProjectDocumentResponse {
   id: string;
   originalName: string;
   contentType: string;
@@ -363,13 +379,13 @@ class RequestRevisionDto {
   notes!: string;
 }
 
-interface MediaUploadIntentResponse extends SignedUploadIntent {
+export interface MediaUploadIntentResponse extends SignedUploadIntent {
   mediaAssetId: string;
   status: MediaStatus;
 }
 
 @Injectable()
-class ProjectsService {
+export class ProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionService,
@@ -413,6 +429,10 @@ class ProjectsService {
           minInvestment: dto.minInvestment,
           maxInvestment: dto.maxInvestment,
           currency: dto.currency ?? "USD",
+          valuation: dto.valuation,
+          structure: dto.structure,
+          returnTarget: dto.returnTarget,
+          equityOffered: dto.equityOffered,
           impactMetrics: dto.impactMetrics,
           expectedImpact: dto.expectedImpact,
           sdgs: dto.sdgs ?? [],
@@ -531,6 +551,10 @@ class ProjectsService {
         minInvestment: dto.minInvestment,
         maxInvestment: dto.maxInvestment,
         currency: dto.currency,
+        valuation: dto.valuation,
+        structure: dto.structure,
+        returnTarget: dto.returnTarget,
+        equityOffered: dto.equityOffered,
         impactMetrics: dto.impactMetrics,
         expectedImpact: dto.expectedImpact,
         sdgs: dto.sdgs,
@@ -1126,6 +1150,179 @@ class ProjectsService {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")}-${Date.now().toString(36)}`;
   }
+
+  // ============= Entrepreneur Dashboard =============
+
+  async getEntrepreneurDashboard(
+    user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    const tenantWhere = { tenantId: user.tenantId };
+    const ownerWhere = { ownerUserId: user.id };
+
+    const [
+      totalProjects,
+      projectsByStatus,
+      totalFundingRaised,
+      activeDeals,
+      totalInvestors,
+      pendingReviews,
+      recentProjects,
+      recentDeals,
+    ] = await Promise.all([
+      this.prisma.project.count({ where: { ...tenantWhere, ...ownerWhere, deletedAt: null } }),
+      this.prisma.project.groupBy({
+        by: ["status"],
+        where: { ...tenantWhere, ...ownerWhere, deletedAt: null },
+        _count: { status: true },
+      }),
+      this.prisma.project.aggregate({
+        where: { ...tenantWhere, ...ownerWhere, deletedAt: null },
+        _sum: { fundingRaised: true },
+      }),
+      this.prisma.deal.count({
+        where: { ...tenantWhere, project: { ownerUserId: user.id } },
+      }),
+      this.prisma.investment.count({
+        where: {
+          project: { ownerUserId: user.id },
+          status: { not: "CANCELLED" as any },
+        },
+      }),
+      this.prisma.project.count({
+        where: { ...tenantWhere, ...ownerWhere, status: ProjectStatus.UNDER_REVIEW },
+      }),
+      this.prisma.project.findMany({
+        where: { ...tenantWhere, ...ownerWhere, deletedAt: null },
+        orderBy: { updatedAt: "desc" },
+        take: 5,
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          fundingTarget: true,
+          fundingRaised: true,
+          currency: true,
+          sector: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.deal.findMany({
+        where: { ...tenantWhere, project: { ownerUserId: user.id } },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          investments: { where: { status: { not: "CANCELLED" as any } }, select: { amount: true } },
+        },
+      }),
+    ]);
+
+    return {
+      stats: {
+        totalProjects,
+        totalFundingRaised: totalFundingRaised._sum.fundingRaised?.toString() ?? "0",
+        activeDeals,
+        totalInvestors,
+        pendingReviews,
+      },
+      projectsByStatus: Object.fromEntries(
+        projectsByStatus.map((row) => [row.status, row._count.status]),
+      ),
+      recentProjects: recentProjects.map((p) => ({
+        ...p,
+        fundingTarget: p.fundingTarget.toString(),
+        fundingRaised: p.fundingRaised.toString(),
+      })),
+      recentDeals: recentDeals.map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+        targetAmount: d.targetAmount?.toString() ?? "0",
+        amountRaised: d.investments.reduce((sum, inv) => sum + inv.amount.toNumber(), 0).toString(),
+        currency: d.currency,
+        closesAt: d.closesAt,
+      })),
+    };
+  }
+
+  async getProjectAnalytics(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    const project = await this.getProjectForAccess(id, user);
+    this.permissions.assertOwnerOrAdmin(user, project.ownerUserId);
+
+    const [
+      investments,
+      investmentTrend,
+      dealPerformance,
+      milestones,
+      documents,
+    ] = await Promise.all([
+      this.prisma.investment.aggregate({
+        where: { projectId: id, status: { not: "CANCELLED" as any } },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.investment.groupBy({
+        by: ["status"],
+        where: { projectId: id },
+        _count: { id: true },
+        _sum: { amount: true },
+      }),
+      this.prisma.deal.findMany({
+        where: { projectId: id },
+        include: {
+          _count: { select: { investments: true } },
+          investments: { where: { status: { not: "CANCELLED" as any } }, select: { amount: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      this.prisma.milestone.findMany({
+        where: { projectId: id },
+        orderBy: { order: "asc" },
+      }),
+      this.prisma.document.count({ where: { projectId: id } }),
+    ]);
+
+    return {
+      project: {
+        id: project.id,
+        title: project.title,
+        status: project.status,
+        fundingTarget: project.fundingTarget.toString(),
+        fundingRaised: project.fundingRaised.toString(),
+        viewCount: project.viewCount,
+      },
+      investments: {
+        totalCount: investments._count.id,
+        totalAmount: investments._sum.amount?.toString() ?? "0",
+        byStatus: Object.fromEntries(
+          investmentTrend.map((row) => [
+            row.status,
+            { count: row._count.id, amount: row._sum.amount?.toString() ?? "0" },
+          ]),
+        ),
+      },
+      deals: dealPerformance.map((d) => ({
+        id: d.id,
+        title: d.title,
+        status: d.status,
+        targetAmount: d.targetAmount?.toString() ?? "0",
+        amountRaised: d.investments.reduce((sum, inv) => sum + inv.amount.toNumber(), 0).toString(),
+        investorCount: d._count.investments,
+        closesAt: d.closesAt,
+      })),
+      milestones: milestones.map((m) => ({
+        id: m.id,
+        title: m.title,
+        status: m.status,
+        dueDate: m.dueDate,
+        amount: m.amount?.toString() ?? "0",
+      })),
+      documentsCount: documents,
+    };
+  }
 }
 
 function cryptoRandomId(): string {
@@ -1159,6 +1356,23 @@ class ProjectsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Record<string, unknown>> {
     return this.projectsService.getStats(user);
+  }
+
+  @Get("entrepreneur/dashboard")
+  @Roles(PlatformRole.ENTREPRENEUR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getEntrepreneurDashboard(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.projectsService.getEntrepreneurDashboard(user);
+  }
+
+  @Get(":id/analytics")
+  @Roles(PlatformRole.ENTREPRENEUR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getProjectAnalytics(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.projectsService.getProjectAnalytics(id, user);
   }
 
   @Post()
@@ -1275,66 +1489,6 @@ class ProjectsController {
     return this.projectsService.publish(id, user);
   }
 
-  @Get(":id/documents")
-  findDocuments(
-    @Param("id") id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ProjectDocumentResponse[]> {
-    return this.projectsService.findDocuments(id, user);
-  }
-
-  @Post(":id/documents")
-  createDocument(
-    @Param("id") id: string,
-    @Body() dto: CreateProjectDocumentDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<{ documentId: string; bucket: string; objectKey: string; uploadUrl: string; expiresInSeconds: number; status: MediaStatus }> {
-    return this.projectsService.createDocument(id, dto, user);
-  }
-
-  @Post(":id/gallery/upload-intents")
-  createGalleryUploadIntent(
-    @Param("id") id: string,
-    @Body() dto: CreateUploadIntentDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<MediaUploadIntentResponse> {
-    return this.projectsService.createGalleryUploadIntent(id, dto, user);
-  }
-
-  @Public()
-  @Get(":id/gallery")
-  findGallery(@Param("id") id: string): Promise<unknown[]> {
-    return this.projectsService.findGallery(id);
-  }
-
-  @Patch(":projectId/gallery/:mediaId")
-  updateMedia(
-    @Param("projectId") projectId: string,
-    @Param("mediaId") mediaId: string,
-    @Body() dto: UpdateMediaDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<unknown> {
-    return this.projectsService.updateMedia(projectId, mediaId, dto, user);
-  }
-
-  @Delete(":projectId/gallery/:mediaId")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  deleteMedia(
-    @Param("projectId") projectId: string,
-    @Param("mediaId") mediaId: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<void> {
-    return this.projectsService.deleteMedia(projectId, mediaId, user);
-  }
-
-  @Post(":id/gallery/reorder")
-  reorderGallery(
-    @Param("id") id: string,
-    @Body() dto: ReorderGalleryDto,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<unknown[]> {
-    return this.projectsService.reorderGallery(id, dto, user);
-  }
 }
 
 @ApiTags("Milestones")

@@ -169,7 +169,7 @@ type InvestmentWithProject = Prisma.InvestmentGetPayload<{
 }>;
 
 @Injectable()
-class InvestmentsService {
+export class InvestmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionService,

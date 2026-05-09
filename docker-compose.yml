@@ -8,11 +8,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-evzone_secret}
       POSTGRES_DB: ${DB_NAME:-evzone_platform}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "5435:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-evzone} -d ${DB_NAME:-evzone_platform}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME:-evzone} -d ${DB_NAME:-evzone_platform}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +29,7 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,14 +41,14 @@ services:
     container_name: evzone-kafka
     restart: unless-stopped
     ports:
-      - "${KAFKA_INTERNAL_PORT:-9092}:9092"
-      - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
+      - "9093:9092"
+      - "9095:9094"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9095
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -127,7 +127,7 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npm", "run", "start:dev"]
+    command: [ "npm", "run", "start:dev" ]
 
   worker-events:
     build:
@@ -153,7 +153,7 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-events/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-events/src/main.ts" ]
 
   worker-notifications:
     build:
@@ -182,7 +182,7 @@ services:
         condition: service_healthy
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-notifications/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-notifications/src/main.ts" ]
 
   worker-media:
     build:
@@ -209,7 +209,7 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-media/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-media/src/main.ts" ]
 
   worker-compliance:
     build:
@@ -229,7 +229,7 @@ services:
         condition: service_healthy
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-compliance/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-compliance/src/main.ts" ]
 
   scheduler:
     build:
@@ -249,7 +249,7 @@ services:
         condition: service_healthy
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/scheduler/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/scheduler/src/main.ts" ]
 
   worker-webhooks:
     build:
@@ -282,7 +282,7 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-webhooks/src/main.ts"]
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-webhooks/src/main.ts" ]
 
 volumes:
   postgres-data:

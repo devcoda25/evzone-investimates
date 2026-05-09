@@ -4,11 +4,9 @@ import { ConfigModule } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { configuration } from "@evzone/config";
 import { PrismaModule } from "@evzone/database";
-import {
-  EventsModule,
-  KafkaPublisherService,
-  OutboxService,
-} from "@evzone/events";
+import { EventsModule } from "@evzone/events";
+import { NotificationsModule } from "@evzone/notifications";
+import { OutboxPublisherService } from "./outbox-publisher.service";
 
 @Module({
   imports: [
@@ -19,7 +17,9 @@ import {
     }),
     PrismaModule,
     EventsModule,
+    NotificationsModule,
   ],
+  providers: [OutboxPublisherService],
 })
 class WorkerEventsModule {}
 
@@ -32,8 +32,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.createApplicationContext(WorkerEventsModule, {
     logger: ["error", "warn", "log"],
   });
-  const outbox = app.get(OutboxService);
-  const publisher = app.get(KafkaPublisherService);
+  const publisher = app.get(OutboxPublisherService);
   logger.log("Outbox publisher started");
   let running = true;
 
@@ -43,21 +42,8 @@ async function bootstrap(): Promise<void> {
   });
 
   while (running) {
-    const events = await outbox.findPending(50);
-    for (const event of events) {
-      try {
-        await publisher.publish(event.topic, event.eventKey, event.payload);
-        await outbox.markPublished(event.id);
-      } catch (error: unknown) {
-        const err =
-          error instanceof Error
-            ? error
-            : new Error("Unknown outbox publish error");
-        await outbox.markFailed(event.id, err);
-        logger.warn(`Failed to publish ${event.id}: ${err.message}`);
-      }
-    }
-    await sleep(events.length > 0 ? 250 : 2_000);
+    const processed = await publisher.processBatch(50);
+    await sleep(processed > 0 ? 250 : 2_000);
   }
 }
 

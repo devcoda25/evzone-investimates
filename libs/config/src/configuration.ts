@@ -51,6 +51,14 @@ export const kafkaConfig = registerAs("kafka", () => ({
     process.env.KAFKA_CONSUMER_GROUP,
     "evzone-worker-events",
   ),
+  ssl: optionalBoolean(process.env.KAFKA_SSL, false),
+  saslEnabled: optionalBoolean(process.env.KAFKA_SASL_ENABLED, false),
+  saslMechanism: optionalString(
+    process.env.KAFKA_SASL_MECHANISM,
+    "plain",
+  ),
+  saslUsername: process.env.KAFKA_SASL_USERNAME,
+  saslPassword: process.env.KAFKA_SASL_PASSWORD,
 }));
 
 export const redisConfig = registerAs("redis", () => ({

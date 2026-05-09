@@ -43,6 +43,10 @@ export class NotificationDeliveryService {
     await this.deliver(notification);
   }
 
+  supportsEventType(eventType: string): boolean {
+    return this.getHandler(eventType) !== null;
+  }
+
   private async deliver(
     notification: EventHandlerResult,
   ): Promise<void> {
