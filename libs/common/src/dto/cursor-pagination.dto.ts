@@ -44,15 +44,36 @@ export interface CursorPaginatedResponse<T> {
   meta: CursorPaginationMeta;
 }
 
+/**
+ * Encode a string, number, or Date into a base64url cursor string.
+ *
+ * @param value - The value to encode; if a `Date` is provided, its ISO 8601 string is encoded.
+ * @returns A base64url-encoded string representing the provided `value`.
+ */
 export function encodeCursor(value: string | Date | number): string {
   if (value instanceof Date) return Buffer.from(value.toISOString()).toString("base64url");
   return Buffer.from(String(value)).toString("base64url");
 }
 
+/**
+ * Decodes a base64url-encoded pagination cursor into its original UTF-8 string.
+ *
+ * @param cursor - The base64url-encoded cursor value.
+ * @returns The decoded cursor as a UTF-8 string.
+ */
 export function decodeCursor(cursor: string): string {
   return Buffer.from(cursor, "base64url").toString("utf8");
 }
 
+/**
+ * Build cursor pagination metadata for an ordered list of items that include an `id` string.
+ *
+ * @param items - Items already ordered according to the requested sort; each item must have an `id` string.
+ * @param limit - Maximum number of items per page used to determine if a next page exists.
+ * @param _sortBy - Name of the field used for ordering (unused by this helper; provided for API parity).
+ * @param _sortOrder - Sort direction (`"asc"` or `"desc"`, unused by this helper; provided for API parity).
+ * @returns Pagination metadata including `limit`, `nextCursor` (base64url-encoded `id` of the last item when a next page exists, otherwise `null`), `prevCursor` (`null`), `hasNextPage`, and `hasPrevPage` (`false`).
+ */
 export function toCursorPaginationMeta<T extends { id: string }>(
   items: T[],
   limit: number,

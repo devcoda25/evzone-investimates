@@ -17,6 +17,12 @@ assertTestDatabase();
 
 const prisma = new PrismaClient();
 
+/**
+ * Removes test data from a predefined set of Prisma models in reverse dependency order.
+ *
+ * Attempts to call `deleteMany()` for each model in sequence; if a model is not present on
+ * the Prisma client or a deletion fails for a specific table, the error is ignored and cleanup proceeds.
+ */
 async function cleanDatabase(): Promise<void> {
   // Clean up test data in reverse dependency order
   const tables = [

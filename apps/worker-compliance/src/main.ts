@@ -27,6 +27,11 @@ import { OutboxService } from "@evzone/events";
 })
 class WorkerComplianceModule {}
 
+/**
+ * Pause execution for the specified duration.
+ *
+ * @param ms - Delay duration in milliseconds
+ */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -113,6 +118,13 @@ async function checkJurisdictionRestrictions(
   return { allowed: true };
 }
 
+/**
+ * Start the compliance worker: create the Nest application context and continuously process open compliance cases.
+ *
+ * The worker retrieves PrismaService, polls for OPEN compliance cases in batches, runs screening on each case,
+ * and either auto-approves cases or creates compliance alerts and marks cases for manual review based on screening results.
+ * Registers a SIGTERM handler for graceful shutdown and sleeps between polling iterations to control loop cadence.
+ */
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerCompliance");
   const app = await NestFactory.createApplicationContext(
