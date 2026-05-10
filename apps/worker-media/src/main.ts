@@ -24,12 +24,6 @@ import sharp from "sharp";
 })
 class WorkerMediaModule {}
 
-/**
- * Pause execution for the specified number of milliseconds.
- *
- * @param ms - The delay duration in milliseconds
- * @returns Nothing
- */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -122,7 +116,7 @@ async function bootstrap(): Promise<void> {
           // Generate thumbnail for images
           if (headResult.ContentType?.startsWith("image/")) {
             const objectResult = await storage.getObject(asset.objectKey);
-            const bodyBuffer = await streamToBuffer(objectResult.Body as any);
+            const bodyBuffer = await streamToBuffer(objectResult.Body as NodeJS.ReadableStream);
 
             const thumbnailBuffer = await sharp(bodyBuffer)
               .resize(400, 400, { fit: "inside" })
@@ -156,15 +150,15 @@ async function bootstrap(): Promise<void> {
           }
 
           logger.log(`Media asset ready: ${mediaAssetId}`);
-        } catch (err: any) {
-          logger.error(`Failed to process media ${mediaAssetId}: ${err.message}`);
+        } catch (err: unknown) {
+          logger.error(`Failed to process media ${mediaAssetId}: ${err instanceof Error ? err.message : String(err)}`);
           await prisma.mediaAsset.update({
             where: { id: mediaAssetId },
             data: { status: MediaStatus.REJECTED },
           });
         }
-      } catch (err: any) {
-        logger.error(`Error processing message: ${err.message}`);
+      } catch (err: unknown) {
+        logger.error(`Error processing message: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
   });
@@ -183,10 +177,10 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-async function streamToBuffer(stream: any): Promise<Buffer> {
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
-    chunks.push(Buffer.from(chunk));
+    chunks.push(Buffer.from(chunk as Buffer));
   }
   return Buffer.concat(chunks);
 }

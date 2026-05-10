@@ -3,7 +3,7 @@ import { INestApplication, ValidationPipe, VersioningType } from "@nestjs/common
 import request from "supertest";
 import { AppModule } from "../apps/api/src/app.module";
 
-describe("AppController (e2e)", () => {
+
   let app: INestApplication;
 
   beforeAll(async () => {
