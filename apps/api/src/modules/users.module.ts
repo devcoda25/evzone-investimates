@@ -477,6 +477,7 @@ class UsersService {
       aggregateId: id,
       payload: { userId: id, kycStatus: dto.status },
     });
+
     return this.toResponse(updated);
   }
 

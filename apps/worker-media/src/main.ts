@@ -74,7 +74,7 @@ async function bootstrap(): Promise<void> {
 
   // Process Kafka messages for media uploads
   await consumer.run({
-    eachMessage: async ({ topic, partition, message }: KafkaMessage) => {
+    eachMessage: async ({ topic, partition, message }) => {
       try {
         const event = JSON.parse(message.value?.toString() ?? "{}");
         const mediaAssetId = event.payload?.mediaAssetId;
@@ -85,34 +85,25 @@ async function bootstrap(): Promise<void> {
 
         logger.log(`Processing media asset: ${mediaAssetId}`);
 
-        // Validate file exists and get metadata
+        // Validate file exists and get metadata using StorageService
         try {
-          const headCommand = new (await import("@aws-sdk/client-s3")).HeadObjectCommand({
-            Bucket: asset.bucket,
-            Key: asset.objectKey,
-          });
-          const s3Client = storage["client"];
-          const head = await s3Client.send(headCommand);
+          const headResult = await storage.headObject(asset.objectKey);
 
           // Update metadata
           await prisma.mediaAsset.update({
             where: { id: mediaAssetId },
             data: {
-              sizeBytes: head.ContentLength ?? undefined,
-              contentType: head.ContentType ?? undefined,
-              checksum: head.ETag?.replace(/"/g, "") ?? undefined,
-              status: MediaStatus.PROCESSING,
+              sizeBytes: headResult.ContentLength ?? undefined,
+              contentType: headResult.ContentType ?? undefined,
+              checksum: headResult.ETag?.replace(/"/g, "") ?? undefined,
+              status: MediaStatus.VALIDATING,
             },
           });
 
           // Generate thumbnail for images
-          if (head.ContentType?.startsWith("image/")) {
-            const getCmd = new (await import("@aws-sdk/client-s3")).GetObjectCommand({
-              Bucket: asset.bucket,
-              Key: asset.objectKey,
-            });
-            const response = await s3Client.send(getCmd);
-            const bodyBuffer = await streamToBuffer(response.Body as any);
+          if (headResult.ContentType?.startsWith("image/")) {
+            const objectResult = await storage.getObject(asset.objectKey);
+            const bodyBuffer = await streamToBuffer(objectResult.Body as any);
 
             const thumbnailBuffer = await sharp(bodyBuffer)
               .resize(400, 400, { fit: "inside" })
@@ -167,7 +158,7 @@ async function bootstrap(): Promise<void> {
       orderBy: { createdAt: "asc" },
     });
     for (const asset of pendingAssets) {
-      logger.log(`Found stuck pending asset: ${asset.id}`);
+      logger.warn(`Stuck pending upload asset: ${asset.id} created at ${asset.createdAt}`);
     }
     await sleep(30_000);
   }

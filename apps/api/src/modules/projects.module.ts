@@ -844,14 +844,46 @@ export class ProjectsService {
    }
 
    async getSignedUrl(projectId: string, mediaId: string, user: AuthenticatedUser): Promise<{ signedUrl: string; expiresInSeconds: number }> {
-     const project = await this.getProjectForAccess(projectId, user);
-     const media = await this.prisma.mediaAsset.findUnique({
-       where: { id: mediaId, projectId },
-     });
-     if (!media) throw new NotFoundException("Media asset not found");
-     const signedUrl = await this.storage.createReadUrl(media.objectKey);
-     return { signedUrl, expiresInSeconds: 900 };
-   }
+    const project = await this.getProjectForAccess(projectId, user);
+    const media = await this.prisma.mediaAsset.findUnique({
+      where: { id: mediaId, projectId },
+    });
+    if (!media) throw new NotFoundException("Media asset not found");
+    const signedUrl = await this.storage.createReadUrl(media.objectKey);
+    return { signedUrl, expiresInSeconds: 900 };
+  }
+
+    async completeUpload(mediaId: string, user: AuthenticatedUser): Promise<unknown> {
+      const media = await this.prisma.mediaAsset.findUnique({ where: { id: mediaId } });
+      if (!media) throw new NotFoundException("Media asset not found");
+      this.permissions.assertTenantAccess(user, media.tenantId);
+      const updated = await this.transactions.run(async (tx) => {
+        const result = await tx.mediaAsset.update({
+          where: { id: mediaId },
+          data: { status: MediaStatus.UPLOADED },
+        });
+        await this.outbox.create(tx, {
+          tenantId: media.tenantId,
+          topic: "media.upload.completed",
+          eventType: "media.upload.completed",
+          aggregateType: "media",
+          aggregateId: mediaId,
+          payload: { mediaAssetId: mediaId, projectId: media.projectId },
+        });
+        await this.audit.recordFromRequest(
+          { ip: "", headers: {}, user },
+          "media.upload.completed",
+          "media",
+          mediaId,
+          undefined,
+          { status: MediaStatus.UPLOADED },
+          undefined,
+          tx as any,
+        );
+        return result;
+      });
+      return updated;
+    }
 
   async removeMilestone(id: string, user: AuthenticatedUser): Promise<void> {
     const milestone = await this.prisma.milestone.findUnique({

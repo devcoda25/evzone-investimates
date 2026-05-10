@@ -3,7 +3,10 @@ import { ConfigService } from "@nestjs/config";
 import {
   CreateBucketCommand,
   GetObjectCommand,
+  GetObjectCommandOutput,
   HeadBucketCommand,
+  HeadObjectCommand,
+  HeadObjectCommandOutput,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -94,6 +97,24 @@ export class StorageService implements OnModuleInit {
         Key: input.objectKey,
         ContentType: input.contentType,
         Body: input.body,
+      }),
+    );
+  }
+
+  async headObject(objectKey: string): Promise<HeadObjectCommandOutput> {
+    return this.client.send(
+      new HeadObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }),
+    );
+  }
+
+  async getObject(objectKey: string): Promise<GetObjectCommandOutput> {
+    return this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
       }),
     );
   }

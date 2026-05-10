@@ -317,6 +317,22 @@ export class KycKybService {
       },
     });
 
+    // Publish user.verified event when KYC is verified
+    if (newStatus === KycApplicationStatus.VERIFIED && application.userId) {
+      await this.outbox.create(this.prisma, {
+        tenantId: application.tenantId,
+        topic: "user.verified",
+        eventType: "user.verified",
+        aggregateType: "user",
+        aggregateId: application.userId,
+        payload: {
+          userId: application.userId,
+          kycApplicationId: application.id,
+          provider,
+        },
+      });
+    }
+
     return { accepted: true, applicationId: application.id };
   }
 

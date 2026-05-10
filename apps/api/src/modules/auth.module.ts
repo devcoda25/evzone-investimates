@@ -19,6 +19,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from "class-validator";
 import { createHash, randomBytes, randomUUID } from "crypto";
@@ -118,9 +119,12 @@ class ResetPasswordDto {
 
 class VerifyMfaDto {
   @IsString()
-  token!: string;
+  @MinLength(1)
+  userId!: string;
 
   @IsString()
+  @MinLength(6)
+  @MaxLength(6)
   code!: string;
 }
 
@@ -616,34 +620,38 @@ class AuthService {
       otp: string;
       verified: boolean;
     }
-    const stored = await this.redis.getJson<MfaOtp>(`mfa:otp:${dto.token}`);
-    if (!stored || (stored as any).verified) throw new BadRequestException("Invalid or expired MFA token");
+    const stored = await this.redis.getJson<MfaOtp>(`mfa:otp:${dto.userId}`);
+    if (!stored || stored.verified) throw new BadRequestException("Invalid or expired MFA code");
 
-    const secretData = await this.redis.getJson<{ secret: string }>(`mfa:secret:${dto.token}`);
+    if (stored.otp !== dto.code) {
+      throw new BadRequestException("Invalid MFA code");
+    }
+
+    const secretData = await this.redis.getJson<{ secret: string }>(`mfa:secret:${dto.userId}`);
     if (!secretData) {
       // Verify against existing user MFA
       const user = await this.prisma.user.findUnique({
-        where: { id: dto.token, mfaEnabled: true },
+        where: { id: dto.userId, mfaEnabled: true },
       });
       if (!user) throw new BadRequestException("MFA not enabled for this account");
     }
 
     // Mark OTP as verified
-    await this.redis.setJson(`mfa:otp:${dto.token}`, { ...stored, verified: true }, 300);
+    await this.redis.setJson(`mfa:otp:${dto.userId}`, { ...stored, verified: true }, 300);
     // Store verified state for login completion
-    await this.redis.setJson(`mfa:pending:${dto.token}`, { verified: true }, 300);
+    await this.redis.setJson(`mfa:pending:${dto.userId}`, { verified: true }, 300);
 
     await this.audit.record({
       tenantId: undefined,
-      userId: dto.token,
+      userId: dto.userId,
       action: "mfa.verified",
       entityType: "auth",
-      entityId: dto.token,
+      entityId: dto.userId,
     });
 
     // Issue tokens after MFA verification
     const user = await this.prisma.user.findUnique({
-      where: { id: dto.token },
+      where: { id: dto.userId },
       include: { memberships: { where: { status: "ACTIVE" } } },
     });
     if (!user) throw new BadRequestException("User not found");
@@ -754,6 +762,7 @@ class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post("mfa/verify")
   @HttpCode(HttpStatus.OK)
   verifyMfa(@Body() dto: VerifyMfaDto): Promise<AuthTokenResponse> {

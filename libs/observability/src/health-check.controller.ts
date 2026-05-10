@@ -3,10 +3,10 @@ import { HealthCheckService } from "./health-check.service";
 
 @Controller("health")
 export class HealthCheckController {
-  constructor(private readonly health: HealthCheckService) {}
+  constructor(private readonly healthCheckService: HealthCheckService) {}
 
   @Get()
   async health(@Query("check") check?: string) {
-    return this.health.check(check);
+    return this.healthCheckService.check(check);
   }
 }
