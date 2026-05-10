@@ -207,7 +207,7 @@ async function bootstrap(): Promise<void> {
             await prisma.complianceAlert.create({
               data: {
                 tenantId: c.tenantId,
-                type: ComplianceAlertType.MANUAL_REVIEW,
+                type: ComplianceAlertType.KYC_ISSUE,
                 severity: ComplianceAlertSeverity.HIGH,
                 status: ComplianceAlertStatus.OPEN,
                 entityType: "user",
