@@ -53,6 +53,7 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^8.0.7",
     "rxjs": "^7.8.1",
+    "sharp": "^0.33.0",
     "swagger-ui-express": "^5.0.0",
     "twilio": "^6.0.2",
     "uuid": "^9.0.1",
@@ -115,7 +116,8 @@
       "^@evzone/events$": "<rootDir>/libs/events/src",
       "^@evzone/redis$": "<rootDir>/libs/redis/src",
       "^@evzone/storage$": "<rootDir>/libs/storage/src",
-      "^@evzone/audit$": "<rootDir>/libs/audit/src"
+      "^@evzone/audit$": "<rootDir>/libs/audit/src",
+      "^@evzone/notifications$": "<rootDir>/libs/notifications/src"
     },
     "collectCoverageFrom": [
       "apps/**/*.ts",

@@ -1,0 +1,266 @@
+import { ForbiddenException, Injectable } from "@nestjs/common";
+import { PlatformRole } from "@prisma/client";
+import { AuthenticatedUser } from "@evzone/common";
+
+type ResourceType = "project" | "deal" | "investment" | "user" | "tenant" | "compliance" | "dispute" | "document" | "media";
+
+interface ABACContext {
+  userId: string;
+  tenantId: string;
+  role: PlatformRole;
+  resourceType: ResourceType;
+  resourceOwnerId?: string;
+  resourceTenantId?: string;
+  action: string;
+}
+
+@Injectable()
+export class PermissionsService {
+  isPlatformAdmin(user: AuthenticatedUser): boolean {
+    return (
+      user.role === PlatformRole.ADMIN || user.role === PlatformRole.SUPER_ADMIN
+    );
+  }
+
+  isComplianceOfficer(user: AuthenticatedUser): boolean {
+    return (
+      user.role === PlatformRole.COMPLIANCE_OFFICER ||
+      user.role === PlatformRole.ADMIN ||
+      user.role === PlatformRole.SUPER_ADMIN
+    );
+  }
+
+  canAccessTenant(user: AuthenticatedUser, tenantId: string): boolean {
+    return (
+      this.isPlatformAdmin(user) ||
+      user.memberships.some((membership) => membership.tenantId === tenantId)
+    );
+  }
+
+  assertTenantAccess(user: AuthenticatedUser, tenantId: string): void {
+    if (!this.canAccessTenant(user, tenantId)) {
+      throw new ForbiddenException("You do not have access to this tenant");
+    }
+  }
+
+  assertOwnerOrAdmin(user: AuthenticatedUser, ownerUserId: string): void {
+    if (this.isPlatformAdmin(user) || user.id === ownerUserId) return;
+    throw new ForbiddenException("You can only access your own resource");
+  }
+
+  /**
+   * ABAC check: determines if a user can perform an action on a resource.
+   * Evaluates role-based rules + attribute-based constraints.
+   */
+  can(user: AuthenticatedUser, action: string, resource: ResourceType, ctx: Omit<ABACContext, "userId" | "role" | "action">): boolean {
+    const fullCtx: ABACContext = {
+      userId: user.id,
+      tenantId: user.tenantId,
+      role: user.role,
+      action,
+      ...ctx,
+    };
+
+    // Platform admins can do anything
+    if (this.isPlatformAdmin(user)) return true;
+
+    // Evaluate based on resource type and action
+    switch (resource) {
+      case "project":
+        return this.canProject(user, action, fullCtx);
+      case "deal":
+        return this.canDeal(user, action, fullCtx);
+      case "investment":
+        return this.canInvestment(user, action, fullCtx);
+      case "user":
+        return this.canUser(user, action, fullCtx);
+      case "tenant":
+        return this.canTenant(user, action, fullCtx);
+      case "compliance":
+        return this.canCompliance(user, action, fullCtx);
+      case "dispute":
+        return this.canDispute(user, action, fullCtx);
+      case "document":
+        return this.canDocument(user, action, fullCtx);
+      case "media":
+        return this.canMedia(user, action, fullCtx);
+      default:
+        return false;
+    }
+  }
+
+  assertCan(user: AuthenticatedUser, action: string, resource: ResourceType, ctx: Omit<ABACContext, "userId" | "role" | "action">): void {
+    if (!this.can(user, action, resource, ctx)) {
+      throw new ForbiddenException(`You do not have permission to ${action} this ${resource}`);
+    }
+  }
+
+  private canProject(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "create":
+        return true; // Any authenticated user can create a project in their tenant
+      case "read":
+      case "view":
+        // Public projects or projects in user's tenant
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        // Owner can always view
+        if (ctx.resourceOwnerId === user.id) return true;
+        return false;
+      case "update":
+      case "delete":
+        // Only owner or admin
+        if (ctx.resourceOwnerId === user.id) return true;
+        return this.isPlatformAdmin(user);
+      case "submit":
+      case "publish":
+        return ctx.resourceOwnerId === user.id;
+      default:
+        return false;
+    }
+  }
+
+  private canDeal(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "create":
+        // Must be in the same tenant as the project
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "read":
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "update":
+      case "approve":
+      case "open":
+      case "pause":
+      case "close":
+        // Only platform admin or same tenant
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return this.isPlatformAdmin(user);
+      default:
+        return false;
+    }
+  }
+
+  private canInvestment(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "create":
+        // Any authenticated user can invest
+        return true;
+      case "read":
+        // Investor can see their own, admin can see all in tenant
+        if (ctx.resourceOwnerId === user.id) return true;
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "cancel":
+        return ctx.resourceOwnerId === user.id;
+      case "confirm":
+      case "update":
+        return this.isPlatformAdmin(user) || this.isComplianceOfficer(user);
+      default:
+        return false;
+    }
+  }
+
+  private canUser(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "read":
+        // Can read own profile, or if admin in same tenant
+        if (ctx.resourceOwnerId === user.id) return true;
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId) && this.isPlatformAdmin(user)) return true;
+        return false;
+      case "update":
+        // Can update own profile
+        if (ctx.resourceOwnerId === user.id) return true;
+        // Admin can update users in their tenant
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId) && this.isPlatformAdmin(user)) return true;
+        return false;
+      case "delete":
+      case "suspend":
+        return this.isPlatformAdmin(user);
+      case "approve_kyc":
+        return this.isComplianceOfficer(user);
+      default:
+        return false;
+    }
+  }
+
+  private canTenant(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "read":
+        return this.canAccessTenant(user, ctx.resourceTenantId || "");
+      case "update":
+      case "delete":
+        return this.isPlatformAdmin(user);
+      default:
+        return false;
+    }
+  }
+
+  private canCompliance(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "evaluate":
+        return this.isComplianceOfficer(user);
+      case "read":
+      case "view":
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return this.isPlatformAdmin(user);
+      case "resolve_alert":
+        return this.isComplianceOfficer(user);
+      default:
+        return false;
+    }
+  }
+
+  private canDispute(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "create":
+        return true; // Any authenticated user can raise a dispute
+      case "read":
+        // Can see disputes in their tenant
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        // Platform admin can see all
+        return this.isPlatformAdmin(user);
+      case "update":
+      case "resolve":
+      case "escalate":
+        return this.isPlatformAdmin(user) || this.isComplianceOfficer(user);
+      default:
+        return false;
+    }
+  }
+
+  private canDocument(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "upload":
+        // Must be in the same tenant
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "read":
+      case "download":
+        // Tenant-scoped access
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "delete":
+        return this.isPlatformAdmin(user);
+      default:
+        return false;
+    }
+  }
+
+  private canMedia(user: AuthenticatedUser, action: string, ctx: ABACContext): boolean {
+    switch (action) {
+      case "upload":
+      case "create_intent":
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "read":
+        // Public media or tenant-scoped
+        if (ctx.resourceTenantId && this.canAccessTenant(user, ctx.resourceTenantId)) return true;
+        return false;
+      case "delete":
+        return this.isPlatformAdmin(user);
+      default:
+        return false;
+    }
+  }
+}

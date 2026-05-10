@@ -45,10 +45,12 @@ import {
 } from "@evzone/common";
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
-import { PermissionsService } from "@evzone/permissions";
 import { AuditService } from "@evzone/audit";
+import { PermissionsService } from "@evzone/permissions";
 import { PaymentIntentsService } from "./payments/payments.service";
 import { PaymentsModule } from "./payments/payments.module";
+import { CreateCollectionIntentResult } from "./payments/payment-provider.interface";
+import { RedisService } from "@evzone/redis";
 
 class InvestmentFilterDto extends PaginationDto {
   @IsOptional()
@@ -73,6 +75,10 @@ class InvestmentFilterDto extends PaginationDto {
 class CreateInvestmentDto {
   @IsString()
   projectId!: string;
+
+  @IsOptional()
+  @IsString()
+  dealId?: string;
 
   @Transform(({ value }: { value: string }) => Number(value))
   @IsNumber()
@@ -170,7 +176,9 @@ type InvestmentWithProject = Prisma.InvestmentGetPayload<{
 }>;
 
 @Injectable()
-class InvestmentsService {
+export class InvestmentsService {
+  private readonly idempotencyTtl = 86400; // 24 hours
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly transactions: TransactionService,
@@ -178,7 +186,8 @@ class InvestmentsService {
     private readonly permissions: PermissionsService,
     private readonly paymentIntents: PaymentIntentsService,
     private readonly audit: AuditService,
-  ) {}
+    private readonly redis: RedisService,
+  ) { }
 
   async invest(
     investor: AuthenticatedUser,
@@ -190,6 +199,12 @@ class InvestmentsService {
       throw new BadRequestException(
         "Idempotency-Key header or idempotencyKey body field is required",
       );
+
+    // Redis idempotency window check (24h)
+    const idemKey = `idempotency:investment:${investor.id}:${idempotencyKey}`;
+    const cached = await this.redis.getIdempotency(idemKey);
+    if (cached) return JSON.parse(cached);
+
     const existing = await this.prisma.investment.findUnique({
       where: {
         investorUserId_idempotencyKey: {
@@ -222,6 +237,37 @@ class InvestmentsService {
       throw new BadRequestException(
         `Maximum investment amount is ${project.maxInvestment.toString()} ${project.currency}`,
       );
+    }
+
+    // Check investor total per deal (if deal has maxAmount set)
+    if (dto.dealId) {
+      const deal = await this.prisma.deal.findUnique({
+        where: { id: dto.dealId },
+        include: { investments: true },
+      });
+      if (deal?.maxAmount) {
+        const totalCommitted = deal.investments.reduce(
+          (sum, inv) => sum + Number(inv.amount),
+          0,
+        );
+        if (totalCommitted + dto.amount > Number(deal.maxAmount)) {
+          throw new BadRequestException(
+            `Investment would exceed deal maximum of ${deal.maxAmount} (already committed: ${totalCommitted})`,
+          );
+        }
+      }
+
+      // Per-investor allocation limit: no single investor can exceed 25% of deal target
+      const investorTotalInDeal = deal!.investments
+        .filter((inv) => inv.investorUserId === investor.id)
+        .reduce((sum, inv) => sum + Number(inv.amount), 0);
+      const dealTarget = Number(deal!.targetAmount);
+      const perInvestorLimit = dealTarget * 0.25;
+      if (investorTotalInDeal + dto.amount > perInvestorLimit) {
+        throw new BadRequestException(
+          `Investment would exceed per-investor allocation limit of ${perInvestorLimit} for this deal (already committed: ${investorTotalInDeal})`,
+        );
+      }
     }
 
     const created = await this.transactions.run(async (tx) => {
@@ -260,21 +306,6 @@ class InvestmentsService {
         dto.amount,
         dto.currency ?? project.currency,
       );
-      await this.outbox.create(tx, {
-        tenantId: project.tenantId,
-        topic: "ledger.transaction_posted",
-        eventType: "ledger.transaction_posted",
-        aggregateType: "transaction",
-        aggregateId: transaction.id,
-        payload: {
-          transactionId: transaction.id,
-          investmentId: investment.id,
-          projectId: project.id,
-          amount: dto.amount,
-          currency: dto.currency ?? project.currency,
-          entryCount: 2,
-        },
-      });
       const newFundingRaised = Number(project.fundingRaised) + dto.amount;
       await tx.project.update({
         where: { id: project.id },
@@ -299,11 +330,41 @@ class InvestmentsService {
           amount: dto.amount,
         },
       });
+      await this.outbox.create(tx, {
+        tenantId: project.tenantId,
+        topic: "ledger.transaction_posted",
+        eventType: "ledger.transaction_posted",
+        aggregateType: "ledger_entry",
+        aggregateId: transaction.id,
+        payload: {
+          transactionId: transaction.id,
+          investmentId: investment.id,
+          projectId: project.id,
+          investorUserId: investor.id,
+          amount: dto.amount,
+          currency: dto.currency ?? project.currency,
+          type: "INVESTMENT",
+        },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user: investor },
+        "investment.created",
+        "investment",
+        investment.id,
+        undefined,
+        { amount: dto.amount, projectId: project.id, dealId: investment.dealId },
+        undefined,
+        tx as any,
+      );
       return tx.investment.findUniqueOrThrow({
         where: { id: investment.id },
         include: { project: true, investor: true },
       });
     });
+
+    // Cache idempotency key for 24 hours
+    await this.redis.setIdempotency(idemKey, JSON.stringify(this.toInvestmentResponse(created)), this.idempotencyTtl);
+
     return this.toInvestmentResponse(created);
   }
 
@@ -403,16 +464,35 @@ class InvestmentsService {
         where: { id: investment.projectId },
         data: { fundingRaised: { decrement: investment.amount } },
       });
-      return tx.investment.update({
+      const result = await tx.investment.update({
         where: { id },
         data: { status: InvestmentStatus.CANCELLED },
         include: { project: true, investor: true },
       });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "investment.cancelled",
+        "investment",
+        id,
+        { status: investment.status, amount: investment.amount.toString() },
+        { status: InvestmentStatus.CANCELLED },
+        undefined,
+        tx as any,
+      );
+      await this.outbox.create(tx, {
+        tenantId: investment.tenantId,
+        topic: "investment.cancelled",
+        eventType: "investment.cancelled",
+        aggregateType: "investment",
+        aggregateId: id,
+        payload: { investmentId: id, amount: investment.amount.toString() },
+      });
+      return result;
     });
     return this.toInvestmentResponse(updated);
   }
 
-  async confirm(id: string, admin: AuthenticatedUser): Promise<unknown> {
+  async confirm(id: string, user: AuthenticatedUser): Promise<unknown> {
     const investment = await this.prisma.investment.update({
       where: { id },
       data: { status: InvestmentStatus.CONFIRMED, confirmedAt: new Date() },
@@ -424,15 +504,34 @@ class InvestmentsService {
     });
     await this.audit.record({
       tenantId: investment.tenantId,
-      userId: admin.id,
+      userId: user.id,
       action: "investment.confirmed",
       entityType: "investment",
       entityId: id,
-      newValues: {
-        status: InvestmentStatus.CONFIRMED,
-        amount: investment.amount.toString(),
-        investorUserId: investment.investorUserId,
+      metadata: { amount: investment.amount.toString(), currency: investment.currency },
+    });
+    await this.outbox.create(this.prisma as any, {
+      tenantId: investment.tenantId,
+      topic: "investment.confirmed",
+      eventType: "investment.confirmed",
+      aggregateType: "investment",
+      aggregateId: id,
+      payload: { investmentId: id, amount: investment.amount.toString() },
+    });
+    // Emit ledger.transaction_posted for the confirmed investment
+    await this.outbox.create(this.prisma as any, {
+      tenantId: investment.tenantId,
+      topic: "ledger.transaction_posted",
+      eventType: "ledger.transaction_posted",
+      aggregateType: "ledger_entry",
+      aggregateId: id,
+      payload: {
+        investmentId: id,
         projectId: investment.projectId,
+        investorUserId: investment.investorUserId,
+        amount: investment.amount.toString(),
+        currency: investment.currency,
+        type: "INVESTMENT_CONFIRMED",
       },
     });
     return this.toInvestmentResponse(investment);
@@ -447,10 +546,7 @@ class InvestmentsService {
       include: { investor: true, project: true },
     });
     if (!investment) throw new NotFoundException("Investment not found");
-    if (
-      investment.investorUserId !== user.id &&
-      !this.permissions.isPlatformAdmin(user)
-    ) {
+    if (investment.investorUserId !== user.id && !this.permissions.isPlatformAdmin(user)) {
       throw new ForbiddenException("You can only check your own investments");
     }
 
@@ -487,17 +583,21 @@ class InvestmentsService {
     checks.push({
       name: "compliance_clear",
       passed: riskAlerts === 0,
-      message:
-        riskAlerts === 0
-          ? undefined
-          : `${riskAlerts} open compliance alerts exist`,
+      message: riskAlerts === 0 ? undefined : `${riskAlerts} open compliance alerts exist`,
     });
 
     // 4. Jurisdiction check
+    const investorCountry = investment.investor.countryCode;
+    const projectCountry = investment.project.countryCode;
+    const jurisdictionAllowed = await this.checkJurisdictionAllowed(
+      investment.tenantId,
+      investorCountry ?? undefined,
+      projectCountry ?? undefined,
+    );
     checks.push({
       name: "jurisdiction_allowed",
-      passed: true,
-      message: "Jurisdiction check passed (placeholder)",
+      passed: jurisdictionAllowed.allowed,
+      message: jurisdictionAllowed.reason,
     });
 
     const allPassed = checks.every((c) => c.passed);
@@ -505,10 +605,38 @@ class InvestmentsService {
       ? InvestmentStatus.PENDING_PAYMENT
       : InvestmentStatus.REJECTED;
 
-    const updated = await this.prisma.investment.update({
-      where: { id },
-      data: { status: newStatus },
-      include: { project: true, investor: true },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.investment.update({
+        where: { id },
+        data: { status: newStatus },
+        include: { project: true, investor: true },
+      });
+
+      await this.outbox.create(tx, {
+        tenantId: result.tenantId,
+        topic: "investment.compliance_approved",
+        eventType: "investment.compliance_approved",
+        aggregateType: "investment",
+        aggregateId: id,
+        payload: {
+          investmentId: id,
+          passed: allPassed,
+          checks: checks.map((c) => ({ name: c.name, passed: c.passed })),
+        },
+      });
+
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "investment.compliance_check",
+        "investment",
+        id,
+        { status: investment.status },
+        { status: newStatus, checks },
+        undefined,
+        tx as any,
+      );
+
+      return result;
     });
 
     return {
@@ -538,7 +666,7 @@ class InvestmentsService {
       );
     }
 
-    return this.paymentIntents.createCollectionIntent({
+    const result = await this.paymentIntents.createCollectionIntent({
       amount: investment.amount.toString(),
       currency: investment.currency,
       customerEmail: investment.investor.email,
@@ -551,7 +679,36 @@ class InvestmentsService {
       tenantId: user.tenantId,
       userId: user.id,
       paymentMethod: investment.paymentMethod ?? undefined,
+    }) as CreateCollectionIntentResult;
+
+    await this.outbox.create(this.prisma as any, {
+      tenantId: investment.tenantId,
+      topic: "payment.intent_created",
+      eventType: "payment.intent_created",
+      aggregateType: "investment",
+      aggregateId: id,
+      payload: {
+        investmentId: id,
+        amount: investment.amount.toString(),
+        currency: investment.currency,
+        userId: user.id,
+      },
     });
+
+    await this.audit.record({
+      tenantId: investment.tenantId,
+      userId: user.id,
+      action: "payment.intent_created",
+      entityType: "investment",
+      entityId: id,
+      metadata: {
+        amount: investment.amount.toString(),
+        currency: investment.currency,
+        paymentProvider: result.provider ?? null,
+      },
+    });
+
+    return result;
   }
 
   async getPortfolio(
@@ -660,9 +817,9 @@ class InvestmentsService {
         metadata:
           type === TransactionType.WITHDRAWAL
             ? {
-                bankDetails: (dto as WithdrawalDto).bankDetails ?? null,
-                note: (dto as WithdrawalDto).note ?? null,
-              }
+              bankDetails: (dto as WithdrawalDto).bankDetails ?? null,
+              note: (dto as WithdrawalDto).note ?? null,
+            }
             : undefined,
       },
     });
@@ -884,6 +1041,83 @@ class InvestmentsService {
     });
   }
 
+  /**
+   * Check if an investor from a given country is allowed to invest in a project
+   * in a given jurisdiction. Uses tenant-level jurisdiction rules.
+   */
+  private async checkJurisdictionAllowed(
+    tenantId: string,
+    investorCountry?: string,
+    projectCountry?: string,
+  ): Promise<{ allowed: boolean; reason: string }> {
+    if (!investorCountry) {
+      return { allowed: false, reason: "Investor country not set — cannot verify jurisdiction" };
+    }
+    if (!projectCountry) {
+      return { allowed: false, reason: "Project country not set — cannot verify jurisdiction" };
+    }
+
+    // Block same-country restrictions are not needed, but we check tenant-level
+    // jurisdiction rules from Redis cache (populated by compliance worker).
+    const cacheKey = `jurisdiction:rules:${tenantId}`;
+    const cachedRules = await this.redis.getJson<{
+      blockedInvestorCountries?: string[];
+      blockedProjectCountries?: string[];
+      allowedCrossBorder?: boolean;
+      blockedPairs?: Array<{ investor: string; project: string }>;
+    }>(cacheKey);
+
+    // Default rules if no cache: allow cross-border, block known sanctioned pairs
+    const blockedInvestorCountries = cachedRules?.blockedInvestorCountries ?? [
+      "IR", "KP", "SY", "CU", "SD", "MM", "RU",
+    ];
+    const blockedProjectCountries = cachedRules?.blockedProjectCountries ?? [
+      "IR", "KP", "SY", "CU", "SD", "MM", "RU",
+    ];
+    const allowedCrossBorder = cachedRules?.allowedCrossBorder ?? true;
+    const blockedPairs = cachedRules?.blockedPairs ?? [];
+
+    // Check if investor country is sanctioned
+    if (blockedInvestorCountries.includes(investorCountry)) {
+      return {
+        allowed: false,
+        reason: `Investor country (${investorCountry}) is on the restricted/sanctioned list`,
+      };
+    }
+
+    // Check if project country is sanctioned
+    if (blockedProjectCountries.includes(projectCountry)) {
+      return {
+        allowed: false,
+        reason: `Project country (${projectCountry}) is on the restricted/sanctioned list`,
+      };
+    }
+
+    // Check specific blocked pairs
+    const isBlockedPair = blockedPairs.some(
+      (pair) => pair.investor === investorCountry && pair.project === projectCountry,
+    );
+    if (isBlockedPair) {
+      return {
+        allowed: false,
+        reason: `Investment from ${investorCountry} to ${projectCountry} is explicitly blocked`,
+      };
+    }
+
+    // Cross-border check
+    if (investorCountry !== projectCountry && !allowedCrossBorder) {
+      return {
+        allowed: false,
+        reason: "Cross-border investments are not allowed for this tenant",
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: `Jurisdiction check passed: investor (${investorCountry}) → project (${projectCountry})`,
+    };
+  }
+
   private investmentOrderBy(
     sortBy: string | undefined,
     sortOrder: "asc" | "desc" = "desc",
@@ -961,7 +1195,7 @@ class InvestmentsService {
 @ApiBearerAuth()
 @Controller("investments")
 class InvestmentsController {
-  constructor(private readonly investmentsService: InvestmentsService) {}
+  constructor(private readonly investmentsService: InvestmentsService) { }
 
   @Get("portfolio")
   @Roles(PlatformRole.INVESTOR)
@@ -1054,10 +1288,7 @@ class InvestmentsController {
 
   @Post(":id/confirm")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  confirm(
-    @Param("id") id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<unknown> {
+  confirm(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<unknown> {
     return this.investmentsService.confirm(id, user);
   }
 
@@ -1084,7 +1315,7 @@ class InvestmentsController {
 @ApiBearerAuth()
 @Controller("transactions")
 class TransactionsController {
-  constructor(private readonly investmentsService: InvestmentsService) {}
+  constructor(private readonly investmentsService: InvestmentsService) { }
 
   @Get("stats")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
@@ -1211,4 +1442,4 @@ class TransactionsController {
   providers: [InvestmentsService],
   exports: [InvestmentsService],
 })
-export class InvestmentsModule {}
+export class InvestmentsModule { }

@@ -1,0 +1,22 @@
+{
+  "name": "worker-payments",
+  "targets": {
+    "build": {
+      "executor": "@nrwl/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/worker-payments",
+        "main": "apps/worker-payments/src/main.ts",
+        "tsConfig": "apps/worker-payments/tsconfig.app.json",
+        "assets": ["apps/worker-payments/src"]
+      }
+    },
+    "serve": {
+      "executor": "@nrwl/js:ts-node",
+      "options": {
+        "buildTarget": "worker-payments:build",
+        "runBuildTargetOutput": false
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { KycProvider } from "@prisma/client";
+import { CircuitBreaker } from "@evzone/observability";
 import {
   KycProviderAdapter,
   SubmitIdentityInput,
@@ -15,10 +16,16 @@ export class SmileIdentityAdapter implements KycProviderAdapter {
   private readonly baseUrl = "https://api.smileidentity.com/v1";
   private readonly apiKey: string;
   private readonly partnerId: string;
+  private readonly circuitBreaker: CircuitBreaker;
 
   constructor(private readonly config: ConfigService) {
     this.apiKey = this.config.get<string>("SMILE_IDENTITY_API_KEY") ?? "";
     this.partnerId = this.config.get<string>("SMILE_IDENTITY_PARTNER_ID") ?? "";
+    this.circuitBreaker = new CircuitBreaker("smile-identity", {
+      failureThreshold: 5,
+      resetTimeout: 60_000,
+      halfOpenMaxCalls: 3,
+    });
   }
 
   private headers(): Record<string, string> {
@@ -60,12 +67,13 @@ export class SmileIdentityAdapter implements KycProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/id_verification`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/id_verification`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
 
       return {
         provider: KycProvider.SMILE_IDENTITY,
@@ -100,12 +108,13 @@ export class SmileIdentityAdapter implements KycProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/business_verification`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/business_verification`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
 
       return {
         provider: KycProvider.SMILE_IDENTITY,

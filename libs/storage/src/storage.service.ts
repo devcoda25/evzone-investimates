@@ -3,12 +3,15 @@ import { ConfigService } from "@nestjs/config";
 import {
   CreateBucketCommand,
   GetObjectCommand,
+  GetObjectCommandOutput,
   HeadBucketCommand,
+  HeadObjectCommand,
+  HeadObjectCommandOutput,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { SignedUploadIntent, StoragePutInput } from "./types";
+import { SignedReadIntent, SignedUploadIntent, StoragePutInput } from "./types";
 
 @Injectable()
 export class StorageService implements OnModuleInit {
@@ -78,6 +81,15 @@ export class StorageService implements OnModuleInit {
     });
   }
 
+  async createReadIntent(objectKey: string): Promise<SignedReadIntent> {
+    const readUrl = await this.createReadUrl(objectKey);
+    return {
+      objectKey,
+      readUrl,
+      expiresInSeconds: this.signedUrlTtlSeconds,
+    };
+  }
+
   async putObject(input: StoragePutInput): Promise<void> {
     await this.client.send(
       new PutObjectCommand({
@@ -85,6 +97,24 @@ export class StorageService implements OnModuleInit {
         Key: input.objectKey,
         ContentType: input.contentType,
         Body: input.body,
+      }),
+    );
+  }
+
+  async headObject(objectKey: string): Promise<HeadObjectCommandOutput> {
+    return this.client.send(
+      new HeadObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }),
+    );
+  }
+
+  async getObject(objectKey: string): Promise<GetObjectCommandOutput> {
+    return this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
       }),
     );
   }

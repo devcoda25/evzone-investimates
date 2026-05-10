@@ -258,6 +258,40 @@ export class PaymentIntentsService {
       // Post ledger entries
       if (verification.status === PaymentStatus.SUCCEEDED) {
         await this.ledger.postCollectionSuccess(tx, intent, txRecord);
+
+        // Emit payment.confirmed event
+        await this.outbox.create(tx, {
+          tenantId: intent.tenantId,
+          topic: "payment.confirmed",
+          eventType: "payment.confirmed",
+          aggregateType: "payment_intent",
+          aggregateId: intent.id,
+          payload: {
+            paymentIntentId: intent.id,
+            investmentId: intent.investmentId,
+            amount: intent.amount.toString(),
+            currency: intent.currency,
+          },
+        });
+
+        // Emit ledger.transaction_posted event for investment payment
+        if (intent.investmentId) {
+          await this.outbox.create(tx, {
+            tenantId: intent.tenantId,
+            topic: "ledger.transaction_posted",
+            eventType: "ledger.transaction_posted",
+            aggregateType: "ledger_entry",
+            aggregateId: txRecord.id,
+            payload: {
+              transactionId: txRecord.id,
+              investmentId: intent.investmentId,
+              paymentIntentId: intent.id,
+              amount: intent.amount.toString(),
+              currency: intent.currency,
+              type: "INVESTMENT",
+            },
+          });
+        }
       } else if (
         verification.status === PaymentStatus.FAILED ||
         verification.status === PaymentStatus.CANCELLED

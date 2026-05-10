@@ -15,7 +15,13 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
-import { IsEnum, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import {
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from "class-validator";
 import {
   DealStatus,
   InvestmentStatus,
@@ -42,7 +48,9 @@ import {
 } from "@evzone/common";
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
+import { AuditService } from "@evzone/audit";
 import { PermissionsService } from "@evzone/permissions";
+import { StorageService, SignedUploadIntent } from "@evzone/storage";
 
 class DealFilterDto extends PaginationDto {
   @IsOptional()
@@ -173,7 +181,8 @@ class DealsService {
     private readonly transactions: TransactionService,
     private readonly permissions: PermissionsService,
     private readonly outbox: OutboxService,
-  ) {}
+    private readonly audit: AuditService,
+  ) { }
 
   async create(
     dto: CreateDealDto,
@@ -189,30 +198,47 @@ class DealsService {
       !this.permissions.isPlatformAdmin(user) &&
       project.ownerUserId !== user.id
     ) {
-      throw new BadRequestException(
-        "You can only create deals for your own projects",
-      );
+      throw new BadRequestException("You can only create deals for your own projects");
     }
-    const deal = await this.prisma.deal.create({
-      data: {
+    const deal = await this.transactions.run(async (tx) => {
+      const created = await tx.deal.create({
+        data: {
+          tenantId: project.tenantId,
+          projectId: project.id,
+          title: dto.title,
+          minInvestment: dto.minInvestment ?? Number(project.minInvestment),
+          targetAmount: dto.targetAmount ?? Number(project.fundingTarget),
+          maxAmount: dto.maxAmount ?? null,
+          currency: dto.currency ?? project.currency,
+          opensAt: dto.opensAt ? new Date(dto.opensAt) : undefined,
+          closesAt: dto.closesAt ? new Date(dto.closesAt) : undefined,
+        },
+        include: { project: true, investments: true },
+      });
+      await this.outbox.create(tx, {
         tenantId: project.tenantId,
-        projectId: project.id,
-        title: dto.title,
-        minInvestment: dto.minInvestment ?? Number(project.minInvestment),
-        targetAmount: dto.targetAmount ?? Number(project.fundingTarget),
-        maxAmount: dto.maxAmount ?? null,
-        currency: dto.currency ?? project.currency,
-        opensAt: dto.opensAt ? new Date(dto.opensAt) : undefined,
-        closesAt: dto.closesAt ? new Date(dto.closesAt) : undefined,
-      },
-      include: { project: true, investments: true },
+        topic: "deal.created",
+        eventType: "deal.created",
+        aggregateType: "deal",
+        aggregateId: created.id,
+        payload: { dealId: created.id, projectId: project.id, userId: user.id },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.created",
+        "deal",
+        created.id,
+        undefined,
+        { title: created.title, status: created.status, projectId: created.projectId },
+        undefined,
+        tx as any,
+      );
+      return created;
     });
     return this.toResponse(deal);
   }
 
-  async findAll(
-    filter: DealFilterDto,
-  ): Promise<PaginatedResponse<DealResponse>> {
+  async findAll(filter: DealFilterDto): Promise<PaginatedResponse<DealResponse>> {
     const page = getPage(filter);
     const limit = getLimit(filter);
     const where: Prisma.DealWhereInput = {};
@@ -228,10 +254,7 @@ class DealsService {
       }),
       this.prisma.deal.count({ where }),
     ]);
-    return {
-      data: data.map((d) => this.toResponse(d)),
-      meta: toPaginationMeta(page, limit, total),
-    };
+    return { data: data.map((d) => this.toResponse(d)), meta: toPaginationMeta(page, limit, total) };
   }
 
   async findOne(id: string): Promise<DealResponse> {
@@ -260,70 +283,78 @@ class DealsService {
     ) {
       throw new BadRequestException("You can only update your own deals");
     }
-    const editableStatuses: DealStatus[] = [
-      DealStatus.DRAFT,
-      DealStatus.COMPLIANCE_REVIEW,
-    ];
+    const editableStatuses: DealStatus[] = [DealStatus.DRAFT, DealStatus.COMPLIANCE_REVIEW];
     if (!editableStatuses.includes(deal.status)) {
-      throw new BadRequestException(
-        "Cannot update a deal that is already live",
-      );
+      throw new BadRequestException("Cannot update a deal that is already live");
     }
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: {
-        title: dto.title,
-        minInvestment: dto.minInvestment,
-        targetAmount: dto.targetAmount,
-        maxAmount: dto.maxAmount,
-        currency: dto.currency,
-        opensAt: dto.opensAt ? new Date(dto.opensAt) : undefined,
-        closesAt: dto.closesAt ? new Date(dto.closesAt) : undefined,
-      },
-      include: { project: true, investments: true },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.deal.update({
+        where: { id },
+        data: {
+          title: dto.title,
+          minInvestment: dto.minInvestment,
+          targetAmount: dto.targetAmount,
+          maxAmount: dto.maxAmount,
+          currency: dto.currency,
+          opensAt: dto.opensAt ? new Date(dto.opensAt) : undefined,
+          closesAt: dto.closesAt ? new Date(dto.closesAt) : undefined,
+        },
+        include: { project: true, investments: true },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.updated",
+        "deal",
+        id,
+        { title: deal.title, minInvestment: deal.minInvestment, targetAmount: deal.targetAmount },
+        { title: dto.title, minInvestment: dto.minInvestment, targetAmount: dto.targetAmount },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async approve(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async approve(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
-    if (
-      deal.status !== DealStatus.DRAFT &&
-      deal.status !== DealStatus.COMPLIANCE_REVIEW
-    ) {
-      throw new BadRequestException(
-        "Deal must be in DRAFT or COMPLIANCE_REVIEW to approve",
-      );
+    if (deal.status !== DealStatus.DRAFT && deal.status !== DealStatus.COMPLIANCE_REVIEW) {
+      throw new BadRequestException("Deal must be in DRAFT or COMPLIANCE_REVIEW to approve");
     }
     const updated = await this.transactions.run(async (tx) => {
-      const approved = await tx.deal.update({
+      const result = await tx.deal.update({
         where: { id },
         data: { status: DealStatus.APPROVED },
         include: { project: true, investments: true },
       });
       await this.outbox.create(tx, {
-        tenantId: approved.tenantId,
+        tenantId: deal.tenantId,
         topic: "deal.approved",
         eventType: "deal.approved",
         aggregateType: "deal",
-        aggregateId: approved.id,
-        payload: {
-          dealId: approved.id,
-          projectId: approved.projectId,
-          previousStatus: deal.status,
-          status: approved.status,
-        },
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId, userId: user.id },
       });
-      return approved;
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.approved",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.APPROVED },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async open(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async open(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -333,31 +364,35 @@ class DealsService {
       throw new BadRequestException("Deal must be APPROVED before opening");
     }
     const updated = await this.transactions.run(async (tx) => {
-      const opened = await tx.deal.update({
+      const result = await tx.deal.update({
         where: { id },
         data: { status: DealStatus.LIVE, opensAt: new Date() },
         include: { project: true, investments: true },
       });
       await this.outbox.create(tx, {
-        tenantId: opened.tenantId,
+        tenantId: deal.tenantId,
         topic: "deal.opened",
         eventType: "deal.opened",
         aggregateType: "deal",
-        aggregateId: opened.id,
-        payload: {
-          dealId: opened.id,
-          projectId: opened.projectId,
-          previousStatus: deal.status,
-          status: opened.status,
-          opensAt: opened.opensAt?.toISOString() ?? null,
-        },
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId },
       });
-      return opened;
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.opened",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.LIVE },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async pause(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async pause(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -366,10 +401,31 @@ class DealsService {
     if (deal.status !== DealStatus.LIVE) {
       throw new BadRequestException("Only live deals can be paused");
     }
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: { status: DealStatus.PAUSED },
-      include: { project: true, investments: true },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.deal.update({
+        where: { id },
+        data: { status: DealStatus.PAUSED },
+        include: { project: true, investments: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: deal.tenantId,
+        topic: "deal.paused",
+        eventType: "deal.paused",
+        aggregateType: "deal",
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.paused",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.PAUSED },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
@@ -377,7 +433,7 @@ class DealsService {
   async close(
     id: string,
     successful: boolean,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
   ): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
@@ -388,74 +444,117 @@ class DealsService {
     if (!closableStatuses.includes(deal.status)) {
       throw new BadRequestException("Only live or paused deals can be closed");
     }
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: {
-        status: successful
-          ? DealStatus.CLOSED_SUCCESSFUL
-          : DealStatus.CLOSED_FAILED,
-        closesAt: new Date(),
-      },
-      include: { project: true, investments: true },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.deal.update({
+        where: { id },
+        data: {
+          status: successful
+            ? DealStatus.CLOSED_SUCCESSFUL
+            : DealStatus.CLOSED_FAILED,
+          closesAt: new Date(),
+        },
+        include: { project: true, investments: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: deal.tenantId,
+        topic: "deal.closed",
+        eventType: "deal.closed",
+        aggregateType: "deal",
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId, successful },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.closed",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: successful ? DealStatus.CLOSED_SUCCESSFUL : DealStatus.CLOSED_FAILED },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async submit(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async submit(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
     if (deal.status !== DealStatus.DRAFT) {
-      throw new BadRequestException(
-        "Only draft deals can be submitted for compliance review",
-      );
+      throw new BadRequestException("Only draft deals can be submitted for compliance review");
     }
     const updated = await this.transactions.run(async (tx) => {
-      const submitted = await tx.deal.update({
+      const result = await tx.deal.update({
         where: { id },
         data: { status: DealStatus.COMPLIANCE_REVIEW },
         include: { project: true, investments: true },
       });
       await this.outbox.create(tx, {
-        tenantId: submitted.tenantId,
+        tenantId: deal.tenantId,
         topic: "deal.submitted",
         eventType: "deal.submitted",
         aggregateType: "deal",
-        aggregateId: submitted.id,
-        payload: {
-          dealId: submitted.id,
-          projectId: submitted.projectId,
-          previousStatus: deal.status,
-          status: submitted.status,
-        },
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId },
       });
-      return submitted;
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.submitted",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.COMPLIANCE_REVIEW },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async reject(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async reject(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
     if (deal.status !== DealStatus.COMPLIANCE_REVIEW) {
-      throw new BadRequestException(
-        "Only deals under compliance review can be rejected",
-      );
+      throw new BadRequestException("Only deals under compliance review can be rejected");
     }
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: { status: DealStatus.CANCELLED },
-      include: { project: true, investments: true },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.deal.update({
+        where: { id },
+        data: { status: DealStatus.CANCELLED },
+        include: { project: true, investments: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: deal.tenantId,
+        topic: "deal.rejected",
+        eventType: "deal.rejected",
+        aggregateType: "deal",
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.rejected",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.CANCELLED },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
 
-  async resume(id: string, _user: AuthenticatedUser): Promise<DealResponse> {
+  async resume(id: string, user: AuthenticatedUser): Promise<DealResponse> {
     const deal = await this.prisma.deal.findUnique({
       where: { id },
       include: { project: true, investments: true },
@@ -464,10 +563,31 @@ class DealsService {
     if (deal.status !== DealStatus.PAUSED) {
       throw new BadRequestException("Only paused deals can be resumed");
     }
-    const updated = await this.prisma.deal.update({
-      where: { id },
-      data: { status: DealStatus.LIVE },
-      include: { project: true, investments: true },
+    const updated = await this.transactions.run(async (tx) => {
+      const result = await tx.deal.update({
+        where: { id },
+        data: { status: DealStatus.LIVE },
+        include: { project: true, investments: true },
+      });
+      await this.outbox.create(tx, {
+        tenantId: deal.tenantId,
+        topic: "deal.resumed",
+        eventType: "deal.resumed",
+        aggregateType: "deal",
+        aggregateId: id,
+        payload: { dealId: id, projectId: deal.projectId },
+      });
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "deal.resumed",
+        "deal",
+        id,
+        { status: deal.status },
+        { status: DealStatus.LIVE },
+        undefined,
+        tx as any,
+      );
+      return result;
     });
     return this.toResponse(updated);
   }
@@ -506,10 +626,7 @@ class DealsService {
         where: { dealId },
         _sum: { amount: true },
       });
-      if (
-        Number(totalCommitted._sum.amount ?? 0) + dto.amount >
-        Number(deal.maxAmount)
-      ) {
+      if (Number(totalCommitted._sum.amount ?? 0) + dto.amount > Number(deal.maxAmount)) {
         throw new BadRequestException("Investment exceeds deal maximum amount");
       }
     }
@@ -542,7 +659,8 @@ class DealsService {
           jurisdiction: deal.project.countryCode,
         },
       });
-      const newFundingRaised = Number(deal.project.fundingRaised) + dto.amount;
+      const newFundingRaised =
+        Number(deal.project.fundingRaised) + dto.amount;
       await tx.project.update({
         where: { id: deal.projectId },
         data: {
@@ -562,22 +680,6 @@ class DealsService {
         dto.amount,
         dto.currency ?? deal.currency,
       );
-      await this.outbox.create(tx, {
-        tenantId: deal.tenantId,
-        topic: "ledger.transaction_posted",
-        eventType: "ledger.transaction_posted",
-        aggregateType: "transaction",
-        aggregateId: transaction.id,
-        payload: {
-          transactionId: transaction.id,
-          investmentId: investment.id,
-          dealId: deal.id,
-          projectId: deal.projectId,
-          amount: dto.amount,
-          currency: dto.currency ?? deal.currency,
-          entryCount: 2,
-        },
-      });
       await this.outbox.create(tx, {
         tenantId: deal.tenantId,
         topic: "investment.created",
@@ -683,9 +785,7 @@ class DealsService {
   }
 
   private toResponse(
-    deal: Prisma.DealGetPayload<{
-      include: { project: true; investments: true };
-    }>,
+    deal: Prisma.DealGetPayload<{ include: { project: true; investments: true } }>,
   ): DealResponse {
     const totalCommitted = deal.investments.reduce(
       (sum, inv) => sum + Number(inv.amount),
@@ -721,7 +821,7 @@ class DealsService {
 @ApiBearerAuth()
 @Controller("deals")
 class DealsController {
-  constructor(private readonly dealsService: DealsService) {}
+  constructor(private readonly dealsService: DealsService) { }
 
   @Public()
   @Get()
@@ -774,11 +874,7 @@ class DealsController {
   }
 
   @Post(":id/open")
-  @Roles(
-    PlatformRole.ADMIN,
-    PlatformRole.SUPER_ADMIN,
-    PlatformRole.ENTREPRENEUR,
-  )
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.ENTREPRENEUR)
   open(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -787,11 +883,7 @@ class DealsController {
   }
 
   @Post(":id/pause")
-  @Roles(
-    PlatformRole.ADMIN,
-    PlatformRole.SUPER_ADMIN,
-    PlatformRole.ENTREPRENEUR,
-  )
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.ENTREPRENEUR)
   pause(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -810,11 +902,7 @@ class DealsController {
   }
 
   @Post(":id/submit")
-  @Roles(
-    PlatformRole.ENTREPRENEUR,
-    PlatformRole.ADMIN,
-    PlatformRole.SUPER_ADMIN,
-  )
+  @Roles(PlatformRole.ENTREPRENEUR, PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
   submit(
     @Param("id") id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -863,4 +951,4 @@ class DealsController {
   providers: [DealsService],
   exports: [DealsService],
 })
-export class DealsModule {}
+export class DealsModule { }

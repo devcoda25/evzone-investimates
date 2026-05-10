@@ -5,6 +5,12 @@ export interface SignedUploadIntent {
   expiresInSeconds: number;
 }
 
+export interface SignedReadIntent {
+  objectKey: string;
+  readUrl: string;
+  expiresInSeconds: number;
+}
+
 export interface StoragePutInput {
   objectKey: string;
   contentType: string;
