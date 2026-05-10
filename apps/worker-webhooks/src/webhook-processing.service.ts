@@ -186,21 +186,22 @@ export class WebhookProcessingService {
     payload: Record<string, unknown>,
   ): string | null {
     if (provider === PaymentProvider.FLUTTERWAVE) {
-      return (
-        ((payload.data as Record<string, unknown> | undefined)?.tx_ref as
-          | string
-          | undefined) ?? null
-      );
+      const data = payload.data;
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        const txRef = (data as Record<string, unknown>).tx_ref;
+        if (typeof txRef === "string") return txRef;
+      }
+      return null;
     }
 
     if (provider === PaymentProvider.PAYTOTA) {
-      return (
-        (payload.reference as string | undefined) ??
-        ((payload.data as Record<string, unknown> | undefined)?.reference as
-          | string
-          | undefined) ??
-        null
-      );
+      if (typeof payload.reference === "string") return payload.reference;
+      const data = payload.data;
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        const ref = (data as Record<string, unknown>).reference;
+        if (typeof ref === "string") return ref;
+      }
+      return null;
     }
 
     return null;

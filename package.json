@@ -20,9 +20,10 @@
     "seed": "node prisma/seed.js",
     "lint": "eslint \"{apps,libs,prisma,test}/**/*.ts\"",
     "test": "jest --runInBand",
+    "test:integration": "jest --runInBand --setupFilesAfterEnv=./test/setup.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
@@ -117,7 +118,9 @@
       "^@evzone/redis$": "<rootDir>/libs/redis/src",
       "^@evzone/storage$": "<rootDir>/libs/storage/src",
       "^@evzone/audit$": "<rootDir>/libs/audit/src",
-      "^@evzone/notifications$": "<rootDir>/libs/notifications/src"
+      "^@evzone/notifications$": "<rootDir>/libs/notifications/src",
+      "^@evzone/encryption$": "<rootDir>/libs/encryption/src",
+      "^@evzone/impact$": "<rootDir>/libs/impact/src"
     },
     "collectCoverageFrom": [
       "apps/**/*.ts",

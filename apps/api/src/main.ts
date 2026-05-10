@@ -11,6 +11,11 @@ import {
 } from "@evzone/common";
 import { AppModule } from "./app.module";
 
+/**
+ * Bootstraps and starts the NestJS application with security, CORS, global configuration, and Swagger.
+ *
+ * Configures helmet, enables CORS based on configured frontend origins (and localhost in development), sets the global API prefix and URI versioning, installs validation pipes, global interceptors and exception filters, mounts Swagger UI with bearer auth, and begins listening on the configured port.
+ */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     logger: ["error", "warn", "log", "debug", "verbose"],
@@ -34,8 +39,25 @@ async function bootstrap(): Promise<void> {
     config.get<string>("app.frontendAdminUrl"),
   ].filter((value): value is string => Boolean(value));
 
+  const isLocalhost = (url: string): boolean => {
+    try {
+      return new URL(url).hostname === "localhost";
+    } catch {
+      return false;
+    }
+  };
+
   app.enableCors({
-    origin: nodeEnv === "production" ? corsOrigins : true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      // Allow configured origins and localhost in development
+      const allowed = corsOrigins.some(
+        (o) => o === origin || (nodeEnv === "development" && isLocalhost(origin)),
+      );
+      if (allowed) return callback(null, true);
+      callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [

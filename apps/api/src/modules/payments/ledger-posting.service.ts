@@ -154,7 +154,7 @@ export class LedgerPostingService {
 
     await tx.ledgerEntry.createMany({ data: entries });
     this.logger.log(
-      `Posted collection ledger for intent ${intent.id}: gross=${amount}, fee=${fee}, net=${netAmount}`,
+      `Posted collection ledger for intent ${intent.id}: gross=${amount.toString()}, fee=${fee.toString()}, net=${netAmount.toString()}`,
     );
   }
 
@@ -236,7 +236,7 @@ export class LedgerPostingService {
 
     await tx.ledgerEntry.createMany({ data: entries });
     this.logger.log(
-      `Posted payout ledger for payout ${payout.id}: gross=${amount}, fee=${fee}, net=${netAmount}`,
+      `Posted payout ledger for payout ${payout.id}: gross=${amount.toString()}, fee=${fee.toString()}, net=${netAmount.toString()}`,
     );
   }
 
@@ -298,7 +298,7 @@ export class LedgerPostingService {
 
     await tx.ledgerEntry.createMany({ data: entries });
     this.logger.log(
-      `Posted reversal ledger for intent ${intent.id}: amount=${amount}`,
+      `Posted reversal ledger for intent ${intent.id}: amount=${amount.toString()}`,
     );
   }
 

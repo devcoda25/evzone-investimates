@@ -9,7 +9,7 @@ import {
   Post,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import { IsEnum, IsString } from "class-validator";
+import { IsEnum } from "class-validator";
 import { AuthenticatedUser, CurrentUser } from "@evzone/common";
 import { PrismaService } from "@evzone/database";
 

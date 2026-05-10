@@ -322,6 +322,7 @@ class DealsService {
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
+    this.permissions.assertTenantAccess(user, deal.tenantId);
     if (deal.status !== DealStatus.DRAFT && deal.status !== DealStatus.COMPLIANCE_REVIEW) {
       throw new BadRequestException("Deal must be in DRAFT or COMPLIANCE_REVIEW to approve");
     }
@@ -360,6 +361,7 @@ class DealsService {
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
+    this.permissions.assertTenantAccess(user, deal.tenantId);
     if (deal.status !== DealStatus.APPROVED) {
       throw new BadRequestException("Deal must be APPROVED before opening");
     }
@@ -398,6 +400,7 @@ class DealsService {
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
+    this.permissions.assertTenantAccess(user, deal.tenantId);
     if (deal.status !== DealStatus.LIVE) {
       throw new BadRequestException("Only live deals can be paused");
     }
@@ -440,6 +443,7 @@ class DealsService {
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
+    this.permissions.assertTenantAccess(user, deal.tenantId);
     const closableStatuses: DealStatus[] = [DealStatus.LIVE, DealStatus.PAUSED];
     if (!closableStatuses.includes(deal.status)) {
       throw new BadRequestException("Only live or paused deals can be closed");
@@ -484,6 +488,7 @@ class DealsService {
       include: { project: true, investments: true },
     });
     if (!deal) throw new NotFoundException("Deal not found");
+    this.permissions.assertTenantAccess(user, deal.tenantId);
     if (deal.status !== DealStatus.DRAFT) {
       throw new BadRequestException("Only draft deals can be submitted for compliance review");
     }
@@ -607,7 +612,10 @@ class DealsService {
     investor: AuthenticatedUser,
     idempotencyKey?: string,
   ): Promise<unknown> {
-    const key = idempotencyKey ?? `${investor.id}-${dealId}-${Date.now()}`;
+    if (!idempotencyKey) {
+      throw new BadRequestException("Idempotency-Key header is required for investments");
+    }
+    const key = idempotencyKey;
     const deal = await this.prisma.deal.findUnique({
       where: { id: dealId },
       include: { project: true },

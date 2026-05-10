@@ -24,6 +24,12 @@ import sharp from "sharp";
 })
 class WorkerMediaModule {}
 
+/**
+ * Pause execution for the specified number of milliseconds.
+ *
+ * @param ms - The delay duration in milliseconds
+ * @returns Nothing
+ */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -85,9 +91,22 @@ async function bootstrap(): Promise<void> {
 
         logger.log(`Processing media asset: ${mediaAssetId}`);
 
+        const maxFileSizeBytes = parseInt(process.env.UPLOAD_MAX_SIZE ?? "52428800", 10); // default 50 MB
+
         // Validate file exists and get metadata using StorageService
         try {
           const headResult = await storage.headObject(asset.objectKey);
+
+          if (headResult.ContentLength && headResult.ContentLength > maxFileSizeBytes) {
+            logger.warn(
+              `Media asset ${mediaAssetId} exceeds max size (${headResult.ContentLength} > ${maxFileSizeBytes}); rejecting`,
+            );
+            await prisma.mediaAsset.update({
+              where: { id: mediaAssetId },
+              data: { status: MediaStatus.REJECTED },
+            });
+            return;
+          }
 
           // Update metadata
           await prisma.mediaAsset.update({

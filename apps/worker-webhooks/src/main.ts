@@ -33,6 +33,11 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Starts the long-running webhook worker that polls pending payment webhook events and processes them.
+ *
+ * The worker verifies provider collections, records payment transactions, updates payment intents and related investments, posts ledger entries, creates outbox events, and marks webhook events as processed or failed. It runs until receiving SIGTERM, at which point it initiates shutdown.
+ */
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerWebhooks");
   const app = await NestFactory.createApplicationContext(

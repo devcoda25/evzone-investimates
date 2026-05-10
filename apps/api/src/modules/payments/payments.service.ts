@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  InvestmentStatus,
   PaymentDirection,
   PaymentProvider,
   PaymentStatus,
@@ -89,7 +90,7 @@ export class PaymentIntentsService {
       case PaymentProvider.PAYTOTA:
         return this.paytota;
       default:
-        throw new BadRequestException(`Unknown payment provider: ${provider}`);
+        throw new BadRequestException(`Unknown payment provider: ${String(provider)}`);
     }
   }
 
@@ -214,12 +215,52 @@ export class PaymentIntentsService {
       throw new BadRequestException("No provider transaction to verify");
     }
 
+    // Idempotency: skip if already in a terminal state with a recorded transaction
+    const terminalStatuses: PaymentStatus[] = [
+      PaymentStatus.SUCCEEDED,
+      PaymentStatus.FAILED,
+      PaymentStatus.CANCELLED,
+    ];
+    if (terminalStatuses.includes(intent.status)) {
+      const existingTx = await this.prisma.paymentTransaction.findFirst({
+        where: { paymentIntentId: intent.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Payment intent ${paymentIntentId} already processed with status ${intent.status}`,
+        );
+        return {
+          intentId: intent.id,
+          status: intent.status,
+          amount: existingTx.amount.toString(),
+          currency: existingTx.currency,
+          providerFee: existingTx.providerFeeAmount?.toString() ?? null,
+          netAmount: existingTx.netAmount?.toString() ?? null,
+        };
+      }
+    }
+
     const adapter = this.getAdapter(intent.provider);
     const verification = await adapter.verifyCollection(
       intent.providerTransactionId,
     );
 
-    const paymentTransaction = await this.transactions.run(async (tx) => {
+    // Check for duplicate transaction inside the transaction to guard against races
+    const txResult = await this.transactions.run(async (tx) => {
+      const existingTx = await tx.paymentTransaction.findFirst({
+        where: {
+          paymentIntentId: intent.id,
+          providerTransactionId: verification.providerTransactionId,
+        },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Duplicate verify call for payment intent ${paymentIntentId}; transaction already exists`,
+        );
+        return existingTx;
+      }
+
       const txRecord = await tx.paymentTransaction.create({
         data: {
           tenantId: intent.tenantId,
@@ -250,7 +291,7 @@ export class PaymentIntentsService {
       if (intent.investmentId && verification.status === PaymentStatus.SUCCEEDED) {
         await tx.investment.update({
           where: { id: intent.investmentId },
-          data: { status: "CONFIRMED" as any },
+          data: { status: InvestmentStatus.CONFIRMED },
         });
       }
 
@@ -303,11 +344,11 @@ export class PaymentIntentsService {
 
     return {
       intentId: intent.id,
-      status: verification.status,
-      amount: verification.amount,
-      currency: verification.currency,
-      providerFee: verification.providerFeeAmount,
-      netAmount: verification.netAmount,
+      status: txResult.status,
+      amount: txResult.amount.toString(),
+      currency: txResult.currency,
+      providerFee: txResult.providerFeeAmount?.toString() ?? null,
+      netAmount: txResult.netAmount?.toString() ?? null,
     };
   }
 }
@@ -324,14 +365,14 @@ export class PayoutsService {
     private readonly permissions: PermissionsService,
   ) {}
 
-  private getAdapter(provider: PaymentProvider) {
+  private getAdapter(provider: PaymentProvider): PaymentProviderAdapter {
     switch (provider) {
       case PaymentProvider.FLUTTERWAVE:
         return this.flutterwave;
       case PaymentProvider.PAYTOTA:
         return this.paytota;
       default:
-        throw new BadRequestException(`Unknown payment provider: ${provider}`);
+        throw new BadRequestException(`Unknown payment provider: ${String(provider)}`);
     }
   }
 
@@ -479,7 +520,7 @@ export class PaymentWebhooksService {
     // 2. Parse payload
     let payload: Record<string, unknown>;
     try {
-      payload = JSON.parse(rawBody);
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
       throw new BadRequestException("Invalid webhook JSON payload");
     }
@@ -706,7 +747,7 @@ export class ReconciliationService {
                 entityType: "payment_intent",
                 entityId: intent.id,
                 title: "Ledger Reconciliation Discrepancy",
-                description: `Provider amount ${providerAmount} vs ledger sum ${ledgerAmount} (diff: ${diff}) for intent ${intent.id}`,
+                description: `Provider amount ${providerAmount.toString()} vs ledger sum ${ledgerAmount.toString()} (diff: ${diff.toString()}) for intent ${intent.id}`,
               },
             });
           }
