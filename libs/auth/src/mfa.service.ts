@@ -70,9 +70,8 @@ export class MfaService {
     if (!encryptedSecret) return false;
 
     const secret = this.decryptSecret(encryptedSecret);
-    const expectedToken = this.generateTotp(secret);
 
-    if (token === expectedToken) {
+    if (this.verifyTotp(secret, token, 1)) {
       await this.prisma.user.update({
         where: { id: userId },
         data: { mfaEnabled: true },
@@ -98,7 +97,7 @@ export class MfaService {
 
     if (encryptedSecret) {
       const secret = this.decryptSecret(encryptedSecret);
-      if (token === this.generateTotp(secret)) {
+      if (this.verifyTotp(secret, token, 1)) {
         return true;
       }
     }
@@ -197,7 +196,7 @@ export class MfaService {
   private generateBackupCodes(count: number): string[] {
     const codes: string[] = [];
     for (let i = 0; i < count; i++) {
-      codes.push(crypto.randomBytes(4).toString("hex").toUpperCase());
+      codes.push(crypto.randomBytes(16).toString("hex").toUpperCase());
     }
     return codes;
   }
@@ -244,9 +243,9 @@ export class MfaService {
     ]).toString("utf8");
   }
 
-  private generateTotp(secret: string): string {
+  private generateTotp(secret: string, stepOffset = 0): string {
     const period = 30;
-    const time = Math.floor(Date.now() / 1000 / period);
+    const time = Math.floor(Date.now() / 1000 / period) + stepOffset;
     const timeBuffer = Buffer.alloc(8);
     timeBuffer.writeBigUInt64BE(BigInt(time), 0);
 
@@ -260,6 +259,16 @@ export class MfaService {
         (hmac[offset + 3] & 0xff)) %
       1_000_000;
     return code.toString().padStart(6, "0");
+  }
+
+  private verifyTotp(secret: string, token: string, window = 1): boolean {
+    for (let offset = -window; offset <= window; offset++) {
+      const expectedToken = this.generateTotp(secret, offset);
+      if (token === expectedToken) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private buildOtpauthUri(email: string, secret: string): string {

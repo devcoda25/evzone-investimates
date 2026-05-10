@@ -247,7 +247,7 @@ export class PaymentIntentsService {
     );
 
     // Check for duplicate transaction inside the transaction to guard against races
-    await this.transactions.run(async (tx) => {
+    const txResult = await this.transactions.run(async (tx) => {
       const existingTx = await tx.paymentTransaction.findFirst({
         where: {
           paymentIntentId: intent.id,
@@ -344,11 +344,11 @@ export class PaymentIntentsService {
 
     return {
       intentId: intent.id,
-      status: verification.status,
-      amount: verification.amount,
-      currency: verification.currency,
-      providerFee: verification.providerFeeAmount,
-      netAmount: verification.netAmount,
+      status: txResult.status,
+      amount: txResult.amount.toString(),
+      currency: txResult.currency,
+      providerFee: txResult.providerFeeAmount?.toString() ?? null,
+      netAmount: txResult.netAmount?.toString() ?? null,
     };
   }
 }

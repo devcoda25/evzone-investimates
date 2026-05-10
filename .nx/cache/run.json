@@ -1,20 +1,86 @@
 {
   "run": {
-    "command": "nx build api",
-    "startTime": "2026-05-08T22:18:00.467Z",
-    "endTime": "2026-05-08T22:18:00.513Z",
+    "command": "nx run-many -t build --projects=api,worker-events,worker-media,worker-compliance,scheduler,worker-notifications,worker-webhooks",
+    "startTime": "2026-05-10T18:34:12.642Z",
+    "endTime": "2026-05-10T18:34:28.723Z",
     "inner": false
   },
   "tasks": [
     {
+      "taskId": "scheduler:build",
+      "target": "build",
+      "projectName": "scheduler",
+      "hash": "1655974523313206389",
+      "startTime": "2026-05-10T18:34:12.666Z",
+      "endTime": "2026-05-10T18:34:18.396Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
+      "taskId": "worker-media:build",
+      "target": "build",
+      "projectName": "worker-media",
+      "hash": "12701644892237443455",
+      "startTime": "2026-05-10T18:34:12.666Z",
+      "endTime": "2026-05-10T18:34:18.438Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
+      "taskId": "worker-webhooks:build",
+      "target": "build",
+      "projectName": "worker-webhooks",
+      "hash": "9059231723087633702",
+      "startTime": "2026-05-10T18:34:12.666Z",
+      "endTime": "2026-05-10T18:34:18.898Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
+      "taskId": "worker-events:build",
+      "target": "build",
+      "projectName": "worker-events",
+      "hash": "4500962510079480077",
+      "startTime": "2026-05-10T18:34:18.439Z",
+      "endTime": "2026-05-10T18:34:23.682Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
+      "taskId": "worker-compliance:build",
+      "target": "build",
+      "projectName": "worker-compliance",
+      "hash": "3069007443557893383",
+      "startTime": "2026-05-10T18:34:18.899Z",
+      "endTime": "2026-05-10T18:34:24.376Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
       "taskId": "api:build",
       "target": "build",
       "projectName": "api",
-      "hash": "6379830387272071543",
-      "startTime": "2026-05-08T22:18:00.490Z",
-      "endTime": "2026-05-08T22:18:00.503Z",
+      "hash": "8846744170009783231",
+      "startTime": "2026-05-10T18:34:18.398Z",
+      "endTime": "2026-05-10T18:34:26.471Z",
       "params": "",
-      "cacheStatus": "local-cache-hit",
+      "cacheStatus": "cache-miss",
+      "status": 0
+    },
+    {
+      "taskId": "worker-notifications:build",
+      "target": "build",
+      "projectName": "worker-notifications",
+      "hash": "756016379515967770",
+      "startTime": "2026-05-10T18:34:23.684Z",
+      "endTime": "2026-05-10T18:34:28.722Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
       "status": 0
     }
   ]

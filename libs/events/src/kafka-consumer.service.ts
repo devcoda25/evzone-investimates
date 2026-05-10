@@ -70,30 +70,51 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(
             `Error handling message on ${payload.topic}: ${message}`,
           );
-          try {
-            await this.dlqProducer.send({
-              topic: `${payload.topic}.dlq`,
-              messages: [
-                {
-                  key: payload.message.key?.toString() ?? null,
-                  value: payload.message.value?.toString() ?? null,
-                  headers: {
-                    ...payload.message.headers,
-                    "x-dlq-reason": message,
-                    "x-dlq-original-topic": payload.topic,
-                    "x-dlq-timestamp": new Date().toISOString(),
-                  },
-                },
-              ],
-            });
-            this.logger.warn(`Message sent to DLQ: ${payload.topic}.dlq`);
-          } catch (dlqError) {
-            this.logger.error(
-              `Failed to send message to DLQ: ${dlqError instanceof Error ? dlqError.message : "Unknown error"}`,
-            );
-          }
+          await this.sendToDlqWithRetry(payload, message);
         }
       },
     });
+  }
+
+  private async sendToDlqWithRetry(
+    payload: EachMessagePayload,
+    errorMessage: string,
+    maxRetries = 3,
+  ): Promise<void> {
+    const dlqMessage = {
+      topic: `${payload.topic}.dlq`,
+      messages: [
+        {
+          key: payload.message.key?.toString() ?? null,
+          value: payload.message.value?.toString() ?? null,
+          headers: {
+            ...payload.message.headers,
+            "x-dlq-reason": errorMessage,
+            "x-dlq-original-topic": payload.topic,
+            "x-dlq-timestamp": new Date().toISOString(),
+          },
+        },
+      ],
+    };
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.dlqProducer.send(dlqMessage);
+        this.logger.warn(`Message sent to DLQ: ${payload.topic}.dlq`);
+        return;
+      } catch (dlqError) {
+        this.logger.error(
+          `Failed to send message to DLQ (attempt ${attempt}/${maxRetries}): ${dlqError instanceof Error ? dlqError.message : "Unknown error"}`,
+        );
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+        }
+      }
+    }
+
+    this.logger.error(
+      `DLQ send failed after ${maxRetries} retries; rethrowing to prevent offset commit`,
+    );
+    throw new Error(`Failed to send message to DLQ after ${maxRetries} retries`);
   }
 }

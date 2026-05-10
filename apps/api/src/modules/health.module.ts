@@ -37,10 +37,10 @@ class HealthService {
     checks: HealthIndicator[];
   }> {
     const checks: HealthIndicator[] = await Promise.all([
-      this.checkDatabase(),
-      this.checkRedis(),
-      this.checkKafka(),
-      this.checkStorage(),
+      this.withTimeout(this.checkDatabase(), 5000, "database"),
+      this.withTimeout(this.checkRedis(), 5000, "redis"),
+      this.withTimeout(this.checkKafka(), 5000, "kafka"),
+      this.withTimeout(this.checkStorage(), 5000, "storage"),
     ]);
 
     const allUp = checks.every((c) => c.status === "up");
@@ -59,6 +59,24 @@ class HealthService {
       timestamp: new Date().toISOString(),
       checks,
     };
+  }
+
+  private async withTimeout(
+    probe: Promise<HealthIndicator>,
+    timeoutMs: number,
+    name: string,
+  ): Promise<HealthIndicator> {
+    const timeoutPromise = new Promise<HealthIndicator>((resolve) => {
+      setTimeout(() => {
+        resolve({
+          name,
+          status: "down",
+          error: `Health check timed out after ${timeoutMs}ms`,
+        });
+      }, timeoutMs);
+    });
+
+    return Promise.race([probe, timeoutPromise]);
   }
 
   private async checkDatabase(): Promise<HealthIndicator> {
