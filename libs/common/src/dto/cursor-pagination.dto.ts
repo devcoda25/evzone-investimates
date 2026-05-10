@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsIn, IsOptional, IsString } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { Type } from "class-transformer";
 
 export type CursorSortOrder = "asc" | "desc";
 
@@ -13,6 +14,10 @@ export class CursorPaginationDto {
 
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  @Type(() => Number)
   limit?: number = 20;
 
   @ApiPropertyOptional({ default: "createdAt" })
@@ -51,12 +56,15 @@ export function decodeCursor(cursor: string): string {
 export function toCursorPaginationMeta<T extends { id: string }>(
   items: T[],
   limit: number,
-  _sortBy: string,
-  _sortOrder: CursorSortOrder,
+  sortBy: string,
+  sortOrder: CursorSortOrder,
 ): CursorPaginationMeta {
   const hasNextPage = items.length > limit;
   const data = hasNextPage ? items.slice(0, limit) : items;
-  const nextCursor = hasNextPage && data.length > 0 ? encodeCursor(data[data.length - 1].id) : null;
+  const lastItem = data[data.length - 1];
+  const nextCursor = hasNextPage && lastItem
+    ? encodeCursor(JSON.stringify({ sortValue: (lastItem as Record<string, unknown>)[sortBy], id: lastItem.id, sortOrder }))
+    : null;
   return {
     limit,
     nextCursor,

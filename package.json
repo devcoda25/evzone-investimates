@@ -19,7 +19,8 @@
     "start:worker-webhooks": "node dist/apps/worker-webhooks/src/main.js",
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "lint": "eslint \"{apps,libs,prisma,test}/**/*.ts\"",
-    "test": "jest --runInBand --setupFilesAfterEnv=./test/setup.ts",
+    "test": "jest --runInBand",
+    "test:integration": "jest --runInBand --setupFilesAfterEnv=./test/setup.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
@@ -117,7 +118,9 @@
       "^@evzone/redis$": "<rootDir>/libs/redis/src",
       "^@evzone/storage$": "<rootDir>/libs/storage/src",
       "^@evzone/audit$": "<rootDir>/libs/audit/src",
-      "^@evzone/notifications$": "<rootDir>/libs/notifications/src"
+      "^@evzone/notifications$": "<rootDir>/libs/notifications/src",
+      "^@evzone/encryption$": "<rootDir>/libs/encryption/src",
+      "^@evzone/impact$": "<rootDir>/libs/impact/src"
     },
     "collectCoverageFrom": [
       "apps/**/*.ts",

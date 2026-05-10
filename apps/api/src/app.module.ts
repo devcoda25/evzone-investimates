@@ -17,6 +17,7 @@ import { AdminModule } from "./modules/admin.module";
 import { ApiAuthModule } from "./modules/auth.module";
 import { DocumentsModule } from "./modules/documents.module";
 import { DueDiligenceModule } from "./modules/due-diligence.module";
+import { HealthModule } from "./modules/health.module";
 import { InvestmentsModule } from "./modules/investments.module";
 import { MessagingModule } from "./modules/messaging.module";
 import { NotificationsModule } from "./modules/notifications.module";
@@ -77,6 +78,7 @@ import { TenantsModule } from "./modules/tenants.module";
     ActivityModule,
     AiAdvisorModule,
     VotesModule,
+    HealthModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

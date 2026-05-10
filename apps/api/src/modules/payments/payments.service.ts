@@ -215,12 +215,52 @@ export class PaymentIntentsService {
       throw new BadRequestException("No provider transaction to verify");
     }
 
+    // Idempotency: skip if already in a terminal state with a recorded transaction
+    const terminalStatuses: PaymentStatus[] = [
+      PaymentStatus.SUCCEEDED,
+      PaymentStatus.FAILED,
+      PaymentStatus.CANCELLED,
+    ];
+    if (terminalStatuses.includes(intent.status)) {
+      const existingTx = await this.prisma.paymentTransaction.findFirst({
+        where: { paymentIntentId: intent.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Payment intent ${paymentIntentId} already processed with status ${intent.status}`,
+        );
+        return {
+          intentId: intent.id,
+          status: intent.status,
+          amount: existingTx.amount.toString(),
+          currency: existingTx.currency,
+          providerFee: existingTx.providerFeeAmount?.toString() ?? null,
+          netAmount: existingTx.netAmount?.toString() ?? null,
+        };
+      }
+    }
+
     const adapter = this.getAdapter(intent.provider);
     const verification = await adapter.verifyCollection(
       intent.providerTransactionId,
     );
 
+    // Check for duplicate transaction inside the transaction to guard against races
     await this.transactions.run(async (tx) => {
+      const existingTx = await tx.paymentTransaction.findFirst({
+        where: {
+          paymentIntentId: intent.id,
+          providerTransactionId: verification.providerTransactionId,
+        },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Duplicate verify call for payment intent ${paymentIntentId}; transaction already exists`,
+        );
+        return existingTx;
+      }
+
       const txRecord = await tx.paymentTransaction.create({
         data: {
           tenantId: intent.tenantId,

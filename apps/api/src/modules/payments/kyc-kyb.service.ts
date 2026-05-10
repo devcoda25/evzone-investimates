@@ -235,7 +235,11 @@ export class KycKybService {
     signature: string | undefined,
   ): Promise<{ accepted: boolean; applicationId?: string }> {
     const adapter = this.getKycAdapter(provider);
-    if (adapter.verifyWebhookSignature && signature) {
+    if (adapter.verifyWebhookSignature) {
+      if (!signature) {
+        this.logger.warn(`KYC webhook signature missing for ${provider}`);
+        return { accepted: false };
+      }
       const verified = await adapter.verifyWebhookSignature(rawBody, signature);
       if (!verified) {
         this.logger.warn(

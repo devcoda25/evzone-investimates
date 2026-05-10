@@ -20,6 +20,8 @@ export class UserFactory {
       overrides.email ??
       `test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@evzone.test`;
 
+    const { rawPassword: _rawPassword, ...prismaOverrides } = overrides;
+
     const user = await this.prisma.user.create({
       data: {
         email,
@@ -28,7 +30,7 @@ export class UserFactory {
         lastName: overrides.lastName ?? "User",
         status: (overrides.status as UserStatus) ?? UserStatus.ACTIVE,
         kycStatus: (overrides.kycStatus as KycStatus) ?? KycStatus.VERIFIED,
-        ...overrides,
+        ...prismaOverrides,
       },
     });
 
@@ -46,44 +48,48 @@ export class UserFactory {
   }> {
     const { id, email, rawPassword } = await this.create(overrides);
 
-    const tenant = await this.prisma.tenant.create({
-      data: {
-        name: `Tenant ${email}`,
-        slug: `tenant-${id.slice(0, 8)}`,
-        type: "ORGANIZATION",
-      },
-    });
-
-    await this.prisma.userTenantMembership.create({
-      data: {
-        userId: id,
-        tenantId: tenant.id,
-        role,
-        status: "ACTIVE",
-      },
-    });
-
-    if (role === PlatformRole.INVESTOR) {
-      await this.prisma.investorProfile.create({
-        data: { userId: id },
-      });
-    } else if (role === PlatformRole.ENTREPRENEUR) {
-      await this.prisma.entrepreneurProfile.create({
+    const result = await this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
         data: {
-          userId: id,
-          companyName: `Company ${email}`,
-          industry: "Other",
+          name: `Tenant ${email}`,
+          slug: `tenant-${id.slice(0, 8)}`,
+          type: "ORGANIZATION",
         },
       });
-    } else if (role === PlatformRole.ASSESSOR) {
-      await this.prisma.assessorProfile.create({
+
+      await tx.userTenantMembership.create({
         data: {
           userId: id,
-          organizationName: `Assessor ${email}`,
+          tenantId: tenant.id,
+          role,
+          status: "ACTIVE",
         },
       });
-    }
 
-    return { id, email, tenantId: tenant.id, rawPassword };
+      if (role === PlatformRole.INVESTOR) {
+        await tx.investorProfile.create({
+          data: { userId: id },
+        });
+      } else if (role === PlatformRole.ENTREPRENEUR) {
+        await tx.entrepreneurProfile.create({
+          data: {
+            userId: id,
+            companyName: `Company ${email}`,
+            industry: "Other",
+          },
+        });
+      } else if (role === PlatformRole.ASSESSOR) {
+        await tx.assessorProfile.create({
+          data: {
+            userId: id,
+            organizationName: `Assessor ${email}`,
+          },
+        });
+      }
+
+      return { tenantId: tenant.id };
+    });
+
+    return { id, email, tenantId: result.tenantId, rawPassword };
   }
 }

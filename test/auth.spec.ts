@@ -40,12 +40,14 @@ describe("AuthModule (integration)", () => {
     await prisma.$disconnect();
   });
 
+  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
   describe("POST /auth/register", () => {
     it("should register a new investor and return tokens", async () => {
       const res = await request(app.getHttpServer())
         .post("/api/v1/auth/register")
         .send({
-          email: "new.investor@evzone.test",
+          email: `new.investor.${uniqueSuffix}@evzone.test`,
           password: "SecurePass123!",
           firstName: "New",
           lastName: "Investor",
@@ -63,7 +65,7 @@ describe("AuthModule (integration)", () => {
       await request(app.getHttpServer())
         .post("/api/v1/auth/register")
         .send({
-          email: "hacker@evzone.test",
+          email: `hacker.${uniqueSuffix}@evzone.test`,
           password: "SecurePass123!",
           firstName: "Bad",
           lastName: "Actor",
@@ -101,7 +103,7 @@ describe("AuthModule (integration)", () => {
     it("should login with valid credentials", async () => {
       const { email, rawPassword } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "login.test@evzone.test" },
+        { email: `login.test.${uniqueSuffix}@evzone.test` },
       );
 
       const res = await request(app.getHttpServer())
@@ -116,7 +118,7 @@ describe("AuthModule (integration)", () => {
     it("should reject invalid password", async () => {
       const { email } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "bad.login@evzone.test" },
+        { email: `bad.login.${uniqueSuffix}@evzone.test` },
       );
 
       await request(app.getHttpServer())
@@ -128,7 +130,7 @@ describe("AuthModule (integration)", () => {
     it("should lock account after 5 failed attempts", async () => {
       const { email } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "locked@evzone.test" },
+        { email: `locked.${uniqueSuffix}@evzone.test` },
       );
 
       for (let i = 0; i < 5; i++) {
@@ -150,7 +152,7 @@ describe("AuthModule (integration)", () => {
     it("should issue new tokens with valid refresh token", async () => {
       const { email, rawPassword } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "refresh.test@evzone.test" },
+        { email: `refresh.test.${uniqueSuffix}@evzone.test` },
       );
 
       const loginRes = await request(app.getHttpServer())
@@ -170,7 +172,7 @@ describe("AuthModule (integration)", () => {
     it("should reject revoked refresh token", async () => {
       const { email, rawPassword } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "revoked.refresh@evzone.test" },
+        { email: `revoked.refresh.${uniqueSuffix}@evzone.test` },
       );
 
       const loginRes = await request(app.getHttpServer())
@@ -195,7 +197,7 @@ describe("AuthModule (integration)", () => {
     it("should revoke all refresh tokens for the user", async () => {
       const { email, rawPassword } = await userFactory.createWithMembership(
         PlatformRole.INVESTOR,
-        { email: "logout.test@evzone.test" },
+        { email: `logout.test.${uniqueSuffix}@evzone.test` },
       );
 
       const loginRes = await request(app.getHttpServer())

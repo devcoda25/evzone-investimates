@@ -113,7 +113,7 @@ async function bootstrap(): Promise<void> {
           topic: "impact.report_reminder",
           eventType: "impact.report_reminder",
           aggregateType: "impact_report",
-          aggregateId: project.impactReport?.id,
+          aggregateId: project.impactReport?.id ?? "",
           payload: {
             projectId: project.id,
             monthsSinceLastReport: monthsSince,

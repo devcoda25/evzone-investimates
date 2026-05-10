@@ -40,6 +40,12 @@ export class StorageService implements OnModuleInit {
     await this.ensureBucket();
   }
 
+  async healthCheck(): Promise<{ status: string; latencyMs: number }> {
+    const start = Date.now();
+    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    return { status: "ok", latencyMs: Date.now() - start };
+  }
+
   getBucket(): string {
     return this.bucket;
   }

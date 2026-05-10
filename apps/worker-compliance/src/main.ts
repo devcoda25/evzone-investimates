@@ -41,7 +41,7 @@ async function screenAgainstSanctions(
   countryCode?: string,
 ): Promise<{ flagged: boolean; reason?: string }> {
   // TODO: Integrate with real sanctions screening provider
-  // Example: Call ComplyAdvantage / Refinitiv World-Check API
+  // Fail closed: route to manual review until real provider is wired
   const knownSanctionedNames = ["Test Sanctioned", "Blocked Entity"];
   const normalizedName = name.trim().toLowerCase();
 
@@ -58,7 +58,8 @@ async function screenAgainstSanctions(
     };
   }
 
-  return { flagged: false };
+  // Always flag for manual review when no real provider is configured
+  return { flagged: true, reason: "Sanctions screening not configured — manual review required" };
 }
 
 /**
@@ -161,24 +162,26 @@ async function bootstrap(): Promise<void> {
             user.countryCode ?? undefined,
           );
           if (sanctionsResult.flagged) {
-            await prisma.complianceAlert.create({
-              data: {
-                tenantId: c.tenantId,
-                type: ComplianceAlertType.AML_FLAG,
-                severity: ComplianceAlertSeverity.CRITICAL,
-                status: ComplianceAlertStatus.OPEN,
-                entityType: "user",
-                entityId: user.id,
-                title: "Sanctions screening match",
-                description: `User matched sanctions list: ${sanctionsResult.reason}`,
-              },
-            });
             decision = ComplianceCaseStatus.REJECTED;
             reason = `Sanctions match: ${sanctionsResult.reason}`;
             logger.warn(`Sanctions hit for user ${user.id}: ${sanctionsResult.reason}`);
-            await prisma.complianceCase.update({
-              where: { id: c.id },
-              data: { status: decision, decidedAt: new Date(), decidedBy: "system", reason },
+            await prisma.$transaction(async (tx) => {
+              await tx.complianceAlert.create({
+                data: {
+                  tenantId: c.tenantId,
+                  type: ComplianceAlertType.AML_FLAG,
+                  severity: ComplianceAlertSeverity.CRITICAL,
+                  status: ComplianceAlertStatus.OPEN,
+                  entityType: "user",
+                  entityId: user.id,
+                  title: "Sanctions screening match",
+                  description: `User matched sanctions list: ${sanctionsResult.reason}`,
+                },
+              });
+              await tx.complianceCase.update({
+                where: { id: c.id },
+                data: { status: decision, decidedAt: new Date(), decidedBy: "system", reason },
+              });
             });
             continue;
           }

@@ -17,6 +17,11 @@ export class IdempotencyService {
    * false if a request with this key is already in flight.
    */
   async acquire(key: string, ttlSeconds = 300): Promise<boolean> {
+    const completed = await this.getResult(key);
+    if (completed) {
+      this.logger.warn(`Idempotency key already completed: ${key}`);
+      return false;
+    }
     const acquired = await this.redis.setIfAbsent(
       `idempotency:${key}`,
       "in-flight",

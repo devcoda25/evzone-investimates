@@ -481,7 +481,21 @@ class UsersService {
     return this.toResponse(updated);
   }
 
-  async suspend(id: string): Promise<UserResponse> {
+  async suspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+    if (!user || user.deletedAt) throw new NotFoundException("User not found");
+    const userTenantId = user.memberships[0]?.tenantId;
+    if (userTenantId) {
+      this.permissions.assertTenantAccess(currentUser, userTenantId);
+    }
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: UserStatus.SUSPENDED },
@@ -502,7 +516,21 @@ class UsersService {
     return this.toResponse(updated);
   }
 
-  async unsuspend(id: string): Promise<UserResponse> {
+  async unsuspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+    if (!user || user.deletedAt) throw new NotFoundException("User not found");
+    const userTenantId = user.memberships[0]?.tenantId;
+    if (userTenantId) {
+      this.permissions.assertTenantAccess(currentUser, userTenantId);
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.user.update({
         where: { id },
@@ -764,14 +792,14 @@ class UsersController {
 
   @Post(":id/suspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  suspend(@Param("id") id: string): Promise<UserResponse> {
-    return this.usersService.suspend(id);
+  suspend(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<UserResponse> {
+    return this.usersService.suspend(id, user);
   }
 
   @Post(":id/unsuspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  unsuspend(@Param("id") id: string): Promise<UserResponse> {
-    return this.usersService.unsuspend(id);
+  unsuspend(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<UserResponse> {
+    return this.usersService.unsuspend(id, user);
   }
 
   @Get(":id/profile")
