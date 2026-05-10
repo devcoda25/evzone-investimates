@@ -215,12 +215,52 @@ export class PaymentIntentsService {
       throw new BadRequestException("No provider transaction to verify");
     }
 
+    // Idempotency: skip if already in a terminal state with a recorded transaction
+    const terminalStatuses: PaymentStatus[] = [
+      PaymentStatus.SUCCEEDED,
+      PaymentStatus.FAILED,
+      PaymentStatus.CANCELLED,
+    ];
+    if (terminalStatuses.includes(intent.status)) {
+      const existingTx = await this.prisma.paymentTransaction.findFirst({
+        where: { paymentIntentId: intent.id },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Payment intent ${paymentIntentId} already processed with status ${intent.status}`,
+        );
+        return {
+          intentId: intent.id,
+          status: intent.status,
+          amount: existingTx.amount.toString(),
+          currency: existingTx.currency,
+          providerFee: existingTx.providerFeeAmount?.toString() ?? null,
+          netAmount: existingTx.netAmount?.toString() ?? null,
+        };
+      }
+    }
+
     const adapter = this.getAdapter(intent.provider);
     const verification = await adapter.verifyCollection(
       intent.providerTransactionId,
     );
 
+    // Check for duplicate transaction inside the transaction to guard against races
     await this.transactions.run(async (tx) => {
+      const existingTx = await tx.paymentTransaction.findFirst({
+        where: {
+          paymentIntentId: intent.id,
+          providerTransactionId: verification.providerTransactionId,
+        },
+      });
+      if (existingTx) {
+        this.logger.log(
+          `Duplicate verify call for payment intent ${paymentIntentId}; transaction already exists`,
+        );
+        return existingTx;
+      }
+
       const txRecord = await tx.paymentTransaction.create({
         data: {
           tenantId: intent.tenantId,
@@ -258,6 +298,40 @@ export class PaymentIntentsService {
       // Post ledger entries
       if (verification.status === PaymentStatus.SUCCEEDED) {
         await this.ledger.postCollectionSuccess(tx, intent, txRecord);
+
+        // Emit payment.confirmed event
+        await this.outbox.create(tx, {
+          tenantId: intent.tenantId,
+          topic: "payment.confirmed",
+          eventType: "payment.confirmed",
+          aggregateType: "payment_intent",
+          aggregateId: intent.id,
+          payload: {
+            paymentIntentId: intent.id,
+            investmentId: intent.investmentId,
+            amount: intent.amount.toString(),
+            currency: intent.currency,
+          },
+        });
+
+        // Emit ledger.transaction_posted event for investment payment
+        if (intent.investmentId) {
+          await this.outbox.create(tx, {
+            tenantId: intent.tenantId,
+            topic: "ledger.transaction_posted",
+            eventType: "ledger.transaction_posted",
+            aggregateType: "ledger_entry",
+            aggregateId: txRecord.id,
+            payload: {
+              transactionId: txRecord.id,
+              investmentId: intent.investmentId,
+              paymentIntentId: intent.id,
+              amount: intent.amount.toString(),
+              currency: intent.currency,
+              type: "INVESTMENT",
+            },
+          });
+        }
       } else if (
         verification.status === PaymentStatus.FAILED ||
         verification.status === PaymentStatus.CANCELLED

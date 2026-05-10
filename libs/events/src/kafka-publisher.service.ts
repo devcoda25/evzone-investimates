@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Kafka, Producer } from "kafkajs";
+import { Kafka, Producer, SASLOptions } from "kafkajs";
 import { Prisma } from "@prisma/client";
 
 @Injectable()
@@ -21,7 +21,13 @@ export class KafkaPublisherService implements OnModuleInit, OnModuleDestroy {
     ];
     const clientId =
       this.config.get<string>("kafka.clientId") ?? "evzone-platform";
-    const kafka = new Kafka({ clientId, brokers });
+    const sasl = this.buildSaslOptions();
+    const kafka = new Kafka({
+      clientId,
+      brokers,
+      ssl: this.config.get<boolean>("kafka.ssl") ?? false,
+      sasl,
+    });
     this.producer = kafka.producer();
     await this.producer.connect();
   }
@@ -29,6 +35,30 @@ export class KafkaPublisherService implements OnModuleInit, OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     if (this.producer) {
       await this.producer.disconnect();
+    }
+  }
+
+  async healthCheck(): Promise<{ status: string; latencyMs: number }> {
+    const start = Date.now();
+    const brokers = this.config.get<string[]>("kafka.brokers") ?? [
+      "localhost:9092",
+    ];
+    const clientId =
+      this.config.get<string>("kafka.clientId") ?? "evzone-platform";
+    const sasl = this.buildSaslOptions();
+    const kafka = new Kafka({
+      clientId,
+      brokers,
+      ssl: this.config.get<boolean>("kafka.ssl") ?? false,
+      sasl,
+    });
+    const admin = kafka.admin();
+    await admin.connect();
+    try {
+      await admin.listTopics();
+      return { status: "ok", latencyMs: Date.now() - start };
+    } finally {
+      await admin.disconnect();
     }
   }
 
@@ -45,5 +75,39 @@ export class KafkaPublisherService implements OnModuleInit, OnModuleDestroy {
       topic,
       messages: [{ key, value: JSON.stringify(payload) }],
     });
+  }
+
+  private buildSaslOptions(): SASLOptions | undefined {
+    const enabled = this.config.get<boolean>("kafka.saslEnabled") ?? false;
+    if (!enabled) return undefined;
+
+    const mechanism =
+      this.config.get<string>("kafka.saslMechanism") ?? "plain";
+    const username = this.config.get<string>("kafka.saslUsername");
+    const password = this.config.get<string>("kafka.saslPassword");
+
+    if (!username || !password) {
+      this.logger.warn(
+        "Kafka SASL is enabled but credentials are incomplete; continuing without SASL",
+      );
+      return undefined;
+    }
+
+    if (mechanism === "plain") {
+      return { mechanism: "plain", username, password };
+    }
+
+    if (mechanism === "scram-sha-256") {
+      return { mechanism: "scram-sha-256", username, password };
+    }
+
+    if (mechanism === "scram-sha-512") {
+      return { mechanism: "scram-sha-512", username, password };
+    }
+
+    this.logger.warn(
+      `Kafka SASL mechanism "${mechanism}" is not supported by this runtime configuration`,
+    );
+    return undefined;
   }
 }

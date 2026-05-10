@@ -2,10 +2,13 @@ import "reflect-metadata";
 import { Logger, Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
-import { MediaStatus } from "@prisma/client";
+import { MediaStatus, Prisma } from "@prisma/client";
+import { Kafka, KafkaMessage, SASLOptions } from "kafkajs";
 import { configuration } from "@evzone/config";
 import { PrismaModule, PrismaService } from "@evzone/database";
 import { StorageModule, StorageService } from "@evzone/storage";
+import { EventsModule } from "@evzone/events";
+import sharp from "sharp";
 
 @Module({
   imports: [
@@ -16,6 +19,7 @@ import { StorageModule, StorageService } from "@evzone/storage";
     }),
     PrismaModule,
     StorageModule,
+    EventsModule,
   ],
 })
 class WorkerMediaModule {}
@@ -30,23 +34,21 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const ALLOWED_CONTENT_TYPES: string[] = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "video/mp4",
-  "application/pdf",
-];
-
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; /**
- * Start the media worker that validates queued uploaded media assets and advances their statuses.
- *
- * Runs a continuous loop that fetches media assets with status `UPLOADED`, validates each asset's
- * content type, size (when provided), and presence in storage, updates the asset status to
- * `READY` or `REJECTED` based on those checks, logs processing events, and terminates cleanly on
- * `SIGTERM`.
- */
+function buildSaslOptions(): SASLOptions | undefined {
+  const enabled = process.env.KAFKA_SASL_ENABLED === "true";
+  if (!enabled) return undefined;
+  const mechanism = process.env.KAFKA_SASL_MECHANISM ?? "plain";
+  const username = process.env.KAFKA_SASL_USERNAME;
+  const password = process.env.KAFKA_SASL_PASSWORD;
+  if (!username || !password) return undefined;
+  if (mechanism === "scram-sha-256") {
+    return { mechanism: "scram-sha-256", username, password };
+  }
+  if (mechanism === "scram-sha-512") {
+    return { mechanism: "scram-sha-512", username, password };
+  }
+  return { mechanism: "plain", username, password };
+}
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerMedia");
@@ -55,78 +57,125 @@ async function bootstrap(): Promise<void> {
   });
   const prisma = app.get(PrismaService);
   const storage = app.get(StorageService);
+
+  // Kafka consumer setup
+  const kafka = new Kafka({
+    clientId: "worker-media",
+    brokers: (process.env.KAFKA_BROKERS ?? "localhost:9092").split(","),
+    ssl: process.env.KAFKA_SSL === "true" ? {} : false,
+    sasl: buildSaslOptions(),
+  });
+  const consumer = kafka.consumer({ groupId: "worker-media" });
+  await consumer.connect();
+  await consumer.subscribe({ topic: "media.upload.completed", fromBeginning: false });
+
   logger.log("Media worker started");
   let running = true;
 
-  process.on("SIGTERM", () => {
+  process.on("SIGTERM", async () => {
     running = false;
-    void app.close();
+    await consumer.disconnect();
+    await app.close();
   });
 
+  // Process Kafka messages for media uploads
+  await consumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+      try {
+        const event = JSON.parse(message.value?.toString() ?? "{}");
+        const mediaAssetId = event.payload?.mediaAssetId;
+        if (!mediaAssetId) return;
+
+        const asset = await prisma.mediaAsset.findUnique({ where: { id: mediaAssetId } });
+        if (!asset || asset.status !== "UPLOADED") return;
+
+        logger.log(`Processing media asset: ${mediaAssetId}`);
+
+        // Validate file exists and get metadata using StorageService
+        try {
+          const headResult = await storage.headObject(asset.objectKey);
+
+          // Update metadata
+          await prisma.mediaAsset.update({
+            where: { id: mediaAssetId },
+            data: {
+              sizeBytes: headResult.ContentLength ?? undefined,
+              contentType: headResult.ContentType ?? undefined,
+              checksum: headResult.ETag?.replace(/"/g, "") ?? undefined,
+              status: MediaStatus.VALIDATING,
+            },
+          });
+
+          // Generate thumbnail for images
+          if (headResult.ContentType?.startsWith("image/")) {
+            const objectResult = await storage.getObject(asset.objectKey);
+            const bodyBuffer = await streamToBuffer(objectResult.Body as any);
+
+            const thumbnailBuffer = await sharp(bodyBuffer)
+              .resize(400, 400, { fit: "inside" })
+              .toFormat("webp")
+              .toBuffer();
+
+            const thumbnailKey = asset.objectKey.replace(/\.[^.]+$/, "") + "-thumb.webp";
+            await storage.putObject({
+              objectKey: thumbnailKey,
+              contentType: "image/webp",
+              body: thumbnailBuffer,
+            });
+
+            const readUrl = await storage.createReadUrl(thumbnailKey);
+            await prisma.mediaAsset.update({
+              where: { id: mediaAssetId },
+              data: {
+                publicUrl: readUrl,
+                width: 400,
+                height: 400,
+                status: MediaStatus.READY,
+              },
+            });
+            logger.log(`Generated thumbnail for ${mediaAssetId}`);
+          } else {
+            // Non-image: mark as ready after validation
+            await prisma.mediaAsset.update({
+              where: { id: mediaAssetId },
+              data: { status: MediaStatus.READY },
+            });
+          }
+
+          logger.log(`Media asset ready: ${mediaAssetId}`);
+        } catch (err: any) {
+          logger.error(`Failed to process media ${mediaAssetId}: ${err.message}`);
+          await prisma.mediaAsset.update({
+            where: { id: mediaAssetId },
+            data: { status: MediaStatus.REJECTED },
+          });
+        }
+      } catch (err: any) {
+        logger.error(`Error processing message: ${err.message}`);
+      }
+    },
+  });
+
+  // Fallback polling for assets stuck in PENDING_UPLOAD
   while (running) {
-    const assets = await prisma.mediaAsset.findMany({
-      where: { status: MediaStatus.UPLOADED },
-      take: 25,
+    const pendingAssets = await prisma.mediaAsset.findMany({
+      where: { status: MediaStatus.PENDING_UPLOAD },
+      take: 10,
       orderBy: { createdAt: "asc" },
     });
-
-    for (const asset of assets) {
-      try {
-        // 1. Validate content type
-        if (!ALLOWED_CONTENT_TYPES.includes(asset.contentType)) {
-          logger.warn(
-            `Rejected media ${asset.id}: unsupported content type ${asset.contentType}`,
-          );
-          await prisma.mediaAsset.update({
-            where: { id: asset.id },
-            data: { status: MediaStatus.REJECTED },
-          });
-          continue;
-        }
-
-        // 2. Validate size if known
-        if (asset.sizeBytes && asset.sizeBytes > MAX_FILE_SIZE_BYTES) {
-          logger.warn(
-            `Rejected media ${asset.id}: size ${asset.sizeBytes} exceeds limit`,
-          );
-          await prisma.mediaAsset.update({
-            where: { id: asset.id },
-            data: { status: MediaStatus.REJECTED },
-          });
-          continue;
-        }
-
-        // 3. Verify object exists in storage
-        try {
-          await storage.createReadUrl(asset.objectKey);
-        } catch (verifyError: unknown) {
-          logger.warn(
-            `Media ${asset.id} not found in storage: ${
-              verifyError instanceof Error ? verifyError.message : "unknown"
-            }`,
-          );
-          await prisma.mediaAsset.update({
-            where: { id: asset.id },
-            data: { status: MediaStatus.REJECTED },
-          });
-          continue;
-        }
-
-        // 4. Mark ready
-        await prisma.mediaAsset.update({
-          where: { id: asset.id },
-          data: { status: MediaStatus.READY },
-        });
-        logger.log(`Marked media asset ready: ${asset.id}`);
-      } catch (error: unknown) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        logger.error(`Failed to process media ${asset.id}: ${message}`);
-      }
+    for (const asset of pendingAssets) {
+      logger.warn(`Stuck pending upload asset: ${asset.id} created at ${asset.createdAt}`);
     }
-
-    await sleep(assets.length > 0 ? 500 : 5_000);
+    await sleep(30_000);
   }
+}
+
+async function streamToBuffer(stream: any): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 void bootstrap();

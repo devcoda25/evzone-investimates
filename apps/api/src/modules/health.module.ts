@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Injectable,
+  Logger,
   Module,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -21,6 +22,8 @@ interface HealthIndicator {
 
 @Injectable()
 class HealthService {
+  private readonly logger = new Logger(HealthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
@@ -63,10 +66,13 @@ class HealthService {
       const result = await this.prisma.healthCheck();
       return { name: "database", status: "up", latencyMs: result.latencyMs };
     } catch (error: unknown) {
+      this.logger.error(
+        `Database health check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       return {
         name: "database",
         status: "down",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Dependency unavailable",
       };
     }
   }
@@ -77,41 +83,47 @@ class HealthService {
       await this.redis.ping();
       return { name: "redis", status: "up", latencyMs: Date.now() - start };
     } catch (error: unknown) {
+      this.logger.error(
+        `Redis health check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       return {
         name: "redis",
         status: "down",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Dependency unavailable",
       };
     }
   }
 
-  private checkKafka(): HealthIndicator {
+  private async checkKafka(): Promise<HealthIndicator> {
     try {
       const start = Date.now();
-      // KafkaPublisherService does not expose connection status directly.
-      // We treat it as up if the module initialized successfully.
-      // A more robust check would attempt a metadata request.
+      await this.kafka.healthCheck();
       return { name: "kafka", status: "up", latencyMs: Date.now() - start };
     } catch (error: unknown) {
+      this.logger.error(
+        `Kafka health check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       return {
         name: "kafka",
         status: "down",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Dependency unavailable",
       };
     }
   }
 
-  private checkStorage(): HealthIndicator {
+  private async checkStorage(): Promise<HealthIndicator> {
     try {
       const start = Date.now();
-      // StorageService ensures bucket exists on init.
-      // We treat it as up if the module initialized successfully.
+      await this.storage.healthCheck();
       return { name: "storage", status: "up", latencyMs: Date.now() - start };
     } catch (error: unknown) {
+      this.logger.error(
+        `Storage health check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
       return {
         name: "storage",
         status: "down",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Dependency unavailable",
       };
     }
   }

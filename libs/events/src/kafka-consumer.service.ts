@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Consumer, EachMessagePayload, Kafka } from "kafkajs";
+import { Consumer, EachMessagePayload, Kafka, Producer } from "kafkajs";
 
 export interface KafkaMessageHandler {
   topic: string;
@@ -11,6 +11,7 @@ export interface KafkaMessageHandler {
 export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(KafkaConsumerService.name);
   private readonly consumer: Consumer;
+  private readonly dlqProducer: Producer;
   private readonly handlers = new Map<string, KafkaMessageHandler>();
 
   constructor(private readonly config: ConfigService) {
@@ -23,15 +24,18 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       this.config.get<string>("kafka.consumerGroup") ?? "evzone-consumer";
     const kafka = new Kafka({ clientId, brokers });
     this.consumer = kafka.consumer({ groupId });
+    this.dlqProducer = kafka.producer();
   }
 
   async onModuleInit(): Promise<void> {
     await this.consumer.connect();
+    await this.dlqProducer.connect();
     this.logger.log("Kafka consumer connected");
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.consumer.disconnect();
+    await this.dlqProducer.disconnect();
     this.logger.log("Kafka consumer disconnected");
   }
 
@@ -66,8 +70,28 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(
             `Error handling message on ${payload.topic}: ${message}`,
           );
-          // In production, implement dead-letter queue here
-          throw error;
+          try {
+            await this.dlqProducer.send({
+              topic: `${payload.topic}.dlq`,
+              messages: [
+                {
+                  key: payload.message.key?.toString() ?? null,
+                  value: payload.message.value?.toString() ?? null,
+                  headers: {
+                    ...payload.message.headers,
+                    "x-dlq-reason": message,
+                    "x-dlq-original-topic": payload.topic,
+                    "x-dlq-timestamp": new Date().toISOString(),
+                  },
+                },
+              ],
+            });
+            this.logger.warn(`Message sent to DLQ: ${payload.topic}.dlq`);
+          } catch (dlqError) {
+            this.logger.error(
+              `Failed to send message to DLQ: ${dlqError instanceof Error ? dlqError.message : "Unknown error"}`,
+            );
+          }
         }
       },
     });

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentProvider, PaymentStatus } from "@prisma/client";
+import { CircuitBreaker } from "@evzone/observability";
 import {
   PaymentProviderAdapter,
   CreateCollectionIntentInput,
@@ -15,9 +16,15 @@ export class PaytotaAdapter implements PaymentProviderAdapter {
   private readonly logger = new Logger(PaytotaAdapter.name);
   private readonly baseUrl = "https://api.paytota.com/v1";
   private readonly secretKey: string;
+  private readonly circuitBreaker: CircuitBreaker;
 
   constructor(private readonly config: ConfigService) {
     this.secretKey = this.config.get<string>("PAYTOTA_SECRET_KEY") ?? "";
+    this.circuitBreaker = new CircuitBreaker("paytota", {
+      failureThreshold: 5,
+      resetTimeout: 60_000,
+      halfOpenMaxCalls: 3,
+    });
   }
 
   private headers(): Record<string, string> {
@@ -42,12 +49,13 @@ export class PaytotaAdapter implements PaymentProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/collections`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/collections`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {
@@ -70,11 +78,12 @@ export class PaytotaAdapter implements PaymentProviderAdapter {
     providerTransactionId: string,
   ): Promise<VerificationResult> {
     try {
-      const res = await fetch(
-        `${this.baseUrl}/collections/${providerTransactionId}/verify`,
-        { headers: this.headers() },
-      );
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(
+          `${this.baseUrl}/collections/${providerTransactionId}/verify`,
+          { headers: this.headers() },
+        ).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       const amount = Number(data?.amount ?? 0);
@@ -114,12 +123,13 @@ export class PaytotaAdapter implements PaymentProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/payouts`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/payouts`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {
@@ -139,10 +149,11 @@ export class PaytotaAdapter implements PaymentProviderAdapter {
 
   async verifyPayout(providerPayoutId: string): Promise<VerificationResult> {
     try {
-      const res = await fetch(`${this.baseUrl}/payouts/${providerPayoutId}`, {
-        headers: this.headers(),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/payouts/${providerPayoutId}`, {
+          headers: this.headers(),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {

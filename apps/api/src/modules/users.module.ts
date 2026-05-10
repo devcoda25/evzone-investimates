@@ -31,6 +31,7 @@ import { OwnerOrAdminGuard } from "@evzone/auth";
 import { PrismaService } from "@evzone/database";
 import { PermissionsService } from "@evzone/permissions";
 import { AuditService } from "@evzone/audit";
+import { OutboxService } from "@evzone/events";
 
 interface UserResponse {
   id: string;
@@ -226,6 +227,7 @@ class UsersService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async findAll(
@@ -397,6 +399,13 @@ class UsersService {
       where: { id },
       data: { deletedAt: new Date(), status: UserStatus.BLOCKED },
     });
+    await this.audit.record({
+      tenantId: undefined,
+      userId: id,
+      action: "user.soft_deleted",
+      entityType: "user",
+      entityId: id,
+    });
   }
 
   async submitKyc(
@@ -423,6 +432,21 @@ class UsersService {
         assessorProfile: true,
       },
     });
+    await this.audit.record({
+      tenantId: currentUser.tenantId,
+      userId: currentUser.id,
+      action: "kyc.submitted",
+      entityType: "user",
+      entityId: id,
+    });
+    await this.outbox.create(this.prisma, {
+      tenantId: currentUser.tenantId,
+      topic: "kyc.submitted",
+      eventType: "kyc.submitted",
+      aggregateType: "user",
+      aggregateId: id,
+      payload: { userId: id, kycStatus: KycStatus.PENDING },
+    });
     return this.toResponse(updated);
   }
 
@@ -437,12 +461,41 @@ class UsersService {
         assessorProfile: true,
       },
     });
+    await this.audit.record({
+      tenantId: updated.memberships?.[0]?.tenantId,
+      userId: id,
+      action: "kyc.verified",
+      entityType: "user",
+      entityId: id,
+      metadata: { status: dto.status, notes: dto.notes },
+    });
+    await this.outbox.create(this.prisma, {
+      tenantId: updated.memberships?.[0]?.tenantId,
+      topic: "kyc.verified",
+      eventType: "kyc.verified",
+      aggregateType: "user",
+      aggregateId: id,
+      payload: { userId: id, kycStatus: dto.status },
+    });
+
     return this.toResponse(updated);
   }
 
   async suspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException("User not found");
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+    if (!user || user.deletedAt) throw new NotFoundException("User not found");
+    const userTenantId = user.memberships[0]?.tenantId;
+    if (userTenantId) {
+      this.permissions.assertTenantAccess(currentUser, userTenantId);
+    }
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: UserStatus.SUSPENDED },
@@ -454,23 +507,18 @@ class UsersService {
       },
     });
     await this.audit.record({
-      tenantId: currentUser.tenantId,
-      userId: currentUser.id,
+      tenantId: updated.memberships?.[0]?.tenantId,
+      userId: id,
       action: "user.suspended",
       entityType: "user",
       entityId: id,
-      oldValues: { status: user.status },
-      newValues: { status: UserStatus.SUSPENDED },
     });
     return this.toResponse(updated);
   }
 
   async unsuspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException("User not found");
-    const updated = await this.prisma.user.update({
+    const user = await this.prisma.user.findUnique({
       where: { id },
-      data: { status: UserStatus.ACTIVE },
       include: {
         memberships: true,
         investorProfile: true,
@@ -478,14 +526,38 @@ class UsersService {
         assessorProfile: true,
       },
     });
-    await this.audit.record({
-      tenantId: currentUser.tenantId,
-      userId: currentUser.id,
-      action: "user.unsuspended",
-      entityType: "user",
-      entityId: id,
-      oldValues: { status: user.status },
-      newValues: { status: UserStatus.ACTIVE },
+    if (!user || user.deletedAt) throw new NotFoundException("User not found");
+    const userTenantId = user.memberships[0]?.tenantId;
+    if (userTenantId) {
+      this.permissions.assertTenantAccess(currentUser, userTenantId);
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.user.update({
+        where: { id },
+        data: { status: UserStatus.ACTIVE },
+        include: {
+          memberships: true,
+          investorProfile: true,
+          entrepreneurProfile: true,
+          assessorProfile: true,
+        },
+      });
+      await this.audit.record({
+        tenantId: result.memberships?.[0]?.tenantId,
+        userId: id,
+        action: "user.unsuspended",
+        entityType: "user",
+        entityId: id,
+      });
+      await this.outbox.create(tx, {
+        tenantId: result.memberships?.[0]?.tenantId ?? "",
+        topic: "user.unsuspended",
+        eventType: "user.unsuspended",
+        aggregateType: "user",
+        aggregateId: id,
+        payload: { userId: id, status: UserStatus.ACTIVE },
+      });
+      return result;
     });
     return this.toResponse(updated);
   }
@@ -720,19 +792,13 @@ class UsersController {
 
   @Post(":id/suspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  suspend(
-    @Param("id") id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<UserResponse> {
+  suspend(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<UserResponse> {
     return this.usersService.suspend(id, user);
   }
 
   @Post(":id/unsuspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  unsuspend(
-    @Param("id") id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<UserResponse> {
+  unsuspend(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<UserResponse> {
     return this.usersService.unsuspend(id, user);
   }
 

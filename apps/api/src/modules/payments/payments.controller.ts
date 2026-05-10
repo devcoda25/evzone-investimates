@@ -9,6 +9,7 @@ import {
   Query,
   BadRequestException,
   Logger,
+  ParseEnumPipe,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -121,10 +122,10 @@ export class PaymentsController {
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
   @ApiOperation({ summary: "List payouts" })
   async listPayouts(
-    @Query("status") status: string | undefined,
+    @Query("status", new ParseEnumPipe(PaymentStatus, { optional: true })) status: PaymentStatus | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
-    return this.payoutsService.findPayouts(user.tenantId, status as PaymentStatus | undefined);
+    return this.payoutsService.findPayouts(user.tenantId, status);
   }
 
   @Get("schedule")

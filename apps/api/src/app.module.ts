@@ -1,20 +1,23 @@
-import { Module } from "@nestjs/common";
+import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuditModule } from "@evzone/audit";
+import { EncryptionModule } from "@evzone/encryption";
+import { EventsModule } from "@evzone/events";
+import { ImpactModule } from "@evzone/impact";
 import { JwtAuthGuard, RolesGuard } from "@evzone/auth";
 import { configuration } from "@evzone/config";
 import { PrismaModule } from "@evzone/database";
-import { EventsModule } from "@evzone/events";
 import { PermissionsModule } from "@evzone/permissions";
-import { RedisModule } from "@evzone/redis";
+import { RedisModule, RedisRateLimitMiddleware } from "@evzone/redis";
 import { StorageModule } from "@evzone/storage";
 import { AdminModule } from "./modules/admin.module";
 import { ApiAuthModule } from "./modules/auth.module";
 import { DocumentsModule } from "./modules/documents.module";
 import { DueDiligenceModule } from "./modules/due-diligence.module";
+import { HealthModule } from "./modules/health.module";
 import { InvestmentsModule } from "./modules/investments.module";
 import { MessagingModule } from "./modules/messaging.module";
 import { NotificationsModule } from "./modules/notifications.module";
@@ -25,8 +28,10 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { WatchlistModule } from "./modules/watchlist.module";
 import { ActivityModule } from "./modules/activity.module";
 import { AiAdvisorModule } from "./modules/ai-advisor.module";
+import { ComplianceModule } from "./modules/compliance.module";
 import { VotesModule } from "./modules/votes.module";
-import { HealthModule } from "./modules/health.module";
+import { MediaModule } from "./modules/media.module";
+import { TenantsModule } from "./modules/tenants.module";
 
 @Module({
   imports: [
@@ -53,13 +58,18 @@ import { HealthModule } from "./modules/health.module";
     EventsModule,
     AuditModule,
     PermissionsModule,
+    EncryptionModule,
+    ImpactModule,
     ApiAuthModule,
+    TenantsModule,
     UsersModule,
     ProjectsModule,
+    MediaModule,
     DocumentsModule,
     InvestmentsModule,
     DueDiligenceModule,
     AdminModule,
+    ComplianceModule,
     NotificationsModule,
     MessagingModule,
     DealsModule,
@@ -76,4 +86,11 @@ import { HealthModule } from "./modules/health.module";
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(RedisRateLimitMiddleware)
+      .exclude("auth/login", "auth/register", "auth/refresh", "auth/forgot-password", "auth/reset-password")
+      .forRoutes("*");
+  }
+}

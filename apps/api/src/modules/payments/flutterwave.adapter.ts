@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PaymentProvider, PaymentStatus } from "@prisma/client";
+import { CircuitBreaker, CircuitBreakerOpenError } from "@evzone/observability";
 import {
   PaymentProviderAdapter,
   CreateCollectionIntentInput,
@@ -15,9 +16,15 @@ export class FlutterwaveAdapter implements PaymentProviderAdapter {
   private readonly logger = new Logger(FlutterwaveAdapter.name);
   private readonly baseUrl = "https://api.flutterwave.com/v3";
   private readonly secretKey: string;
+  private readonly circuitBreaker: CircuitBreaker;
 
   constructor(private readonly config: ConfigService) {
     this.secretKey = this.config.get<string>("FLUTTERWAVE_SECRET_KEY") ?? "";
+    this.circuitBreaker = new CircuitBreaker("flutterwave", {
+      failureThreshold: 5,
+      resetTimeout: 60_000,
+      halfOpenMaxCalls: 3,
+    });
   }
 
   private headers(): Record<string, string> {
@@ -44,12 +51,13 @@ export class FlutterwaveAdapter implements PaymentProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/payments`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/payments`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {
@@ -72,11 +80,12 @@ export class FlutterwaveAdapter implements PaymentProviderAdapter {
     providerTransactionId: string,
   ): Promise<VerificationResult> {
     try {
-      const res = await fetch(
-        `${this.baseUrl}/transactions/${providerTransactionId}/verify`,
-        { headers: this.headers() },
-      );
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(
+          `${this.baseUrl}/transactions/${providerTransactionId}/verify`,
+          { headers: this.headers() },
+        ).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       const amount = Number(data?.amount ?? 0);
@@ -114,12 +123,13 @@ export class FlutterwaveAdapter implements PaymentProviderAdapter {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/transfers`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(payload),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/transfers`, {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify(payload),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {
@@ -139,10 +149,11 @@ export class FlutterwaveAdapter implements PaymentProviderAdapter {
 
   async verifyPayout(providerPayoutId: string): Promise<VerificationResult> {
     try {
-      const res = await fetch(`${this.baseUrl}/transfers/${providerPayoutId}`, {
-        headers: this.headers(),
-      });
-      const json = (await res.json()) as Record<string, unknown>;
+      const json = await this.circuitBreaker.execute(() =>
+        fetch(`${this.baseUrl}/transfers/${providerPayoutId}`, {
+          headers: this.headers(),
+        }).then((r) => r.json()),
+      ) as Record<string, unknown>;
       const data = json.data as Record<string, unknown>;
 
       return {

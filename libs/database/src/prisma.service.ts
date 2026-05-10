@@ -9,9 +9,11 @@ export class PrismaService
 {
   constructor(private readonly config: ConfigService) {
     const nodeEnv = config.get<string>("app.nodeEnv") ?? "development";
-    const url = config.get<string>("database.url") ?? process.env.DATABASE_URL;
+    const configUrl = config.get<string>("database.url");
+    const url = configUrl && configUrl.trim().length > 0 ? configUrl : process.env.DATABASE_URL;
+    const configDirectUrl = config.get<string>("database.directUrl");
     const directUrl =
-      config.get<string>("database.directUrl") ?? process.env.DIRECT_URL;
+      configDirectUrl && configDirectUrl.trim().length > 0 ? configDirectUrl : process.env.DIRECT_URL;
 
     super({
       datasources: {

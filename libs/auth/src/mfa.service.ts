@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "@evzone/database";
+import { Prisma } from "@prisma/client";
 import * as crypto from "crypto";
 
 export interface MfaSetupResult {
@@ -31,11 +32,18 @@ export class MfaService {
     const backupCodes = this.generateBackupCodes(10);
     const hashedBackupCodes = backupCodes.map((code) => this.hashCode(code));
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { preferences: true },
+    });
+    const existingPrefs = (user?.preferences as Record<string, unknown> | null) ?? {};
+
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         mfaEnabled: false, // Enabled only after verification
         preferences: {
+          ...existingPrefs,
           mfaSecret: this.encryptSecret(secret),
           mfaBackupCodes: hashedBackupCodes,
           mfaSetupAt: new Date().toISOString(),
@@ -87,7 +95,6 @@ export class MfaService {
 
     const prefs = user.preferences as Record<string, unknown>;
     const encryptedSecret = prefs.mfaSecret as string | undefined;
-    const hashedBackupCodes = (prefs.mfaBackupCodes as string[]) ?? [];
 
     if (encryptedSecret) {
       const secret = this.decryptSecret(encryptedSecret);
@@ -96,43 +103,95 @@ export class MfaService {
       }
     }
 
-    // Check backup codes
+    // Check backup codes atomically
     const codeHash = this.hashCode(token);
-    const matchIndex = hashedBackupCodes.findIndex((hc) => hc === codeHash);
-    if (matchIndex >= 0) {
-      // Remove used backup code
-      hashedBackupCodes.splice(matchIndex, 1);
-      await this.prisma.user.update({
+    const consumed = await this.prisma.$transaction(async (tx) => {
+      const currentUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { preferences: true },
+      });
+      if (!currentUser?.preferences) return false;
+      const currentPrefs = currentUser.preferences as Record<string, unknown>;
+      const currentCodes = (currentPrefs.mfaBackupCodes as string[]) ?? [];
+      const matchIndex = currentCodes.findIndex((hc) => hc === codeHash);
+      if (matchIndex < 0) return false;
+      const updatedCodes = currentCodes.filter((_, i) => i !== matchIndex);
+      await tx.user.update({
         where: { id: userId },
         data: {
           preferences: {
-            ...prefs,
-            mfaBackupCodes: hashedBackupCodes,
+            ...currentPrefs,
+            mfaBackupCodes: updatedCodes,
           },
         },
       });
       return true;
-    }
+    });
+    if (consumed) return true;
 
     return false;
   }
 
   async disable(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { preferences: true },
+    });
+    const existingPrefs = (user?.preferences as Record<string, unknown> | null) ?? {};
+    const { mfaSecret: _mfaSecret, mfaBackupCodes: _mfaBackupCodes, mfaSetupAt: _mfaSetupAt, ...rest } = existingPrefs;
+
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         mfaEnabled: false,
-        preferences: {
-          mfaSecret: null,
-          mfaBackupCodes: null,
-          mfaSetupAt: null,
-        },
+        preferences: rest as Prisma.InputJsonValue,
       },
     });
   }
 
   private generateSecret(): string {
-    return crypto.randomBytes(20).toString("hex");
+    return this.base32Encode(crypto.randomBytes(20));
+  }
+
+  private base32Encode(buffer: Buffer): string {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let bits = 0;
+    let value = 0;
+    let output = "";
+    for (let i = 0; i < buffer.length; i++) {
+      value = (value << 8) | buffer[i];
+      bits += 8;
+      while (bits >= 5) {
+        output += alphabet[(value >>> (bits - 5)) & 31];
+        bits -= 5;
+      }
+    }
+    if (bits > 0) {
+      output += alphabet[(value << (5 - bits)) & 31];
+    }
+    return output;
+  }
+
+  private base32Decode(encoded: string): Buffer {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const map = new Map<string, number>();
+    for (let i = 0; i < alphabet.length; i++) {
+      map.set(alphabet[i], i);
+    }
+    let bits = 0;
+    let value = 0;
+    const bytes: number[] = [];
+    for (const char of encoded.toUpperCase()) {
+      const val = map.get(char);
+      if (val === undefined) continue;
+      value = (value << 5) | val;
+      bits += 5;
+      if (bits >= 8) {
+        bytes.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    }
+    return Buffer.from(bytes);
   }
 
   private generateBackupCodes(count: number): string[] {
@@ -147,9 +206,16 @@ export class MfaService {
     return crypto.createHash("sha256").update(code).digest("hex");
   }
 
+  private getEncryptionKey(): string {
+    const key = this.config.get<string>("MFA_ENCRYPTION_KEY");
+    if (!key || key.trim().length === 0) {
+      throw new Error("MFA_ENCRYPTION_KEY is not configured");
+    }
+    return key;
+  }
+
   private encryptSecret(secret: string): string {
-    // In production, use a real encryption key from env
-    const key = this.config.get<string>("JWT_ACCESS_SECRET") ?? "default-key";
+    const key = this.getEncryptionKey();
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(
       "aes-256-gcm",
@@ -162,7 +228,7 @@ export class MfaService {
   }
 
   private decryptSecret(encrypted: string): string {
-    const key = this.config.get<string>("JWT_ACCESS_SECRET") ?? "default-key";
+    const key = this.getEncryptionKey();
     const [ivHex, authTagHex, encryptedHex] = encrypted.split(":");
     const iv = Buffer.from(ivHex, "hex");
     const authTag = Buffer.from(authTagHex, "hex");
@@ -184,7 +250,7 @@ export class MfaService {
     const timeBuffer = Buffer.alloc(8);
     timeBuffer.writeBigUInt64BE(BigInt(time), 0);
 
-    const key = Buffer.from(secret, "hex");
+    const key = this.base32Decode(secret);
     const hmac = crypto.createHmac("sha1", key).update(timeBuffer).digest();
     const offset = hmac[hmac.length - 1] & 0x0f;
     const code =

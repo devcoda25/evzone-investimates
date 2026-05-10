@@ -4,9 +4,9 @@ import { ConfigModule } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { configuration } from "@evzone/config";
 import { PrismaModule } from "@evzone/database";
-import { PrismaService } from "@evzone/database";
 import {
   NotificationsModule,
+  NotificationDispatchService,
   NotificationDeliveryService,
 } from "@evzone/notifications";
 
@@ -35,7 +35,7 @@ async function bootstrap(): Promise<void> {
       logger: ["error", "warn", "log"],
     },
   );
-  const prisma = app.get(PrismaService);
+  const queue = app.get(NotificationDispatchService);
   const delivery = app.get(NotificationDeliveryService);
   logger.log("Notification delivery worker started");
   let running = true;
@@ -47,37 +47,32 @@ async function bootstrap(): Promise<void> {
 
   while (running) {
     try {
-      const events = await prisma.outboxEvent.findMany({
-        where: { status: "PUBLISHED" },
-        orderBy: { createdAt: "asc" },
-        take: 50,
-        select: {
-          id: true,
-          eventType: true,
-          payload: true,
-          createdAt: true,
-        },
-      });
+      const jobs = await queue.findReady(50);
 
-      for (const event of events) {
+      for (const job of jobs) {
+        const locked = await queue.markProcessing(job.id);
+        if (!locked) continue;
+
         try {
           await delivery.dispatch(
-            event.eventType,
-            event.payload as Record<string, unknown>,
+            job.eventType,
+            job.payload as Record<string, unknown>,
           );
-          logger.log(`Dispatched ${event.eventType} (${event.id})`);
+          await queue.markSucceeded(job.id);
+          logger.log(`Dispatched ${job.eventType} (${job.eventKey})`);
         } catch (error: unknown) {
           const err =
             error instanceof Error
               ? error
               : new Error("Unknown notification dispatch error");
+          await queue.markFailed(job.id, err);
           logger.warn(
-            `Failed to dispatch ${event.eventType} (${event.id}): ${err.message}`,
+            `Failed to dispatch ${job.eventType} (${job.eventKey}): ${err.message}`,
           );
         }
       }
 
-      await sleep(events.length > 0 ? 250 : 2_000);
+      await sleep(jobs.length > 0 ? 250 : 2_000);
     } catch (error: unknown) {
       const err =
         error instanceof Error

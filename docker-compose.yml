@@ -8,47 +8,58 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-evzone_secret}
       POSTGRES_DB: ${DB_NAME:-evzone_platform}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "127.0.0.1:5435:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-evzone} -d ${DB_NAME:-evzone_platform}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USERNAME:-evzone} -d ${DB_NAME:-evzone_platform}" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - evzone-network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
 
   redis:
     image: redis:7-alpine
     container_name: evzone-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secret} --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    command: redis-server --appendonly yes
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secret}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - evzone-network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
   kafka:
     image: apache/kafka:3.7.0
     container_name: evzone-kafka
     restart: unless-stopped
     ports:
-      - "${KAFKA_INTERNAL_PORT:-9092}:9092"
-      - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
+      - "127.0.0.1:9093:9092"
+      - "127.0.0.1:9095:9094"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9095
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -62,6 +73,8 @@ services:
       - kafka-data:/var/lib/kafka/data
     networks:
       - evzone-network
+    security_opt:
+      - no-new-privileges:true
 
   minio:
     image: minio/minio:RELEASE.2024-05-10T01-41-38Z
@@ -72,12 +85,17 @@ services:
       MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:-minioadmin}
     ports:
-      - "${STORAGE_PORT:-9000}:9000"
-      - "${STORAGE_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${STORAGE_PORT:-9000}:9000"
+      - "127.0.0.1:${STORAGE_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     networks:
       - evzone-network
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
   api:
     build:
@@ -86,7 +104,7 @@ services:
     container_name: evzone-api
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     volumes:
       - .:/app
       - /app/node_modules
@@ -102,7 +120,7 @@ services:
       DIRECT_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: evzone-platform
       KAFKA_CONSUMER_GROUP: evzone-worker-events
@@ -114,6 +132,7 @@ services:
       STORAGE_FORCE_PATH_STYLE: "true"
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-your-secret}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-secret}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     env_file:
       - .env
     depends_on:
@@ -127,7 +146,12 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npm", "run", "start:dev"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npm", "run", "start:dev" ]
 
   worker-events:
     build:
@@ -146,6 +170,7 @@ services:
       KAFKA_BROKERS: kafka:9092
       KAFKA_CLIENT_ID: evzone-platform
       KAFKA_CONSUMER_GROUP: evzone-worker-events
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -153,7 +178,12 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-events/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-events/src/main.ts" ]
 
   worker-notifications:
     build:
@@ -171,18 +201,29 @@ services:
       DIRECT_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
       STORAGE_ENDPOINT: http://minio:9000
       STORAGE_BUCKET: ${STORAGE_BUCKET:-evzone-assets}
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
       STORAGE_FORCE_PATH_STYLE: "true"
+      KAFKA_BROKERS: kafka:9092
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-notifications/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-notifications/src/main.ts" ]
 
   worker-media:
     build:
@@ -202,14 +243,23 @@ services:
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:-minioadmin}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:-minioadmin}
       STORAGE_FORCE_PATH_STYLE: "true"
+      KAFKA_BROKERS: kafka:9092
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_started
+      kafka:
+        condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-media/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-media/src/main.ts" ]
 
   worker-compliance:
     build:
@@ -224,12 +274,26 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      KAFKA_BROKERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-compliance/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-compliance/src/main.ts" ]
 
   scheduler:
     build:
@@ -244,12 +308,26 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${DB_USERNAME:-evzone}:${DB_PASSWORD:-evzone_secret}@postgres:5432/${DB_NAME:-evzone_platform}?schema=public
+      KAFKA_BROKERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/scheduler/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/scheduler/src/main.ts" ]
 
   worker-webhooks:
     build:
@@ -275,6 +353,7 @@ services:
       SMILE_IDENTITY_API_KEY: ${SMILE_IDENTITY_API_KEY:-}
       SMILE_IDENTITY_PARTNER_ID: ${SMILE_IDENTITY_PARTNER_ID:-}
       SMILE_IDENTITY_WEBHOOK_SECRET: ${SMILE_IDENTITY_WEBHOOK_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -282,7 +361,12 @@ services:
         condition: service_started
     networks:
       - evzone-network
-    command: ["npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-webhooks/src/main.ts"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    command: [ "npx", "ts-node", "-r", "tsconfig-paths/register", "apps/worker-webhooks/src/main.ts" ]
 
 volumes:
   postgres-data:

@@ -15,7 +15,7 @@ module.exports = {
   ignorePatterns: ['dist/', 'coverage/', 'node_modules/'],
   overrides: [
     {
-      files: ['test/**/*.ts', '**/*.spec.ts', '**/*.e2e-spec.ts'],
+      files: ['test/setup.ts'],
       rules: {
         '@typescript-eslint/no-unsafe-member-access': 'off',
         '@typescript-eslint/no-unsafe-argument': 'off',
