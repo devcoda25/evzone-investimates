@@ -1,7 +1,16 @@
 import { Test } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from "@nestjs/common";
 import request from "supertest";
-import { PrismaClient, PlatformRole, ProjectStatus, InvestmentStatus } from "@prisma/client";
+import {
+  PrismaClient,
+  PlatformRole,
+  ProjectStatus,
+  InvestmentStatus,
+} from "@prisma/client";
 import { AppModule } from "../apps/api/src/app.module";
 import { UserFactory } from "./factories/user.factory";
 import { ProjectFactory } from "./factories/project.factory";
@@ -22,6 +31,8 @@ describe("InvestmentsModule (integration)", () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.setGlobalPrefix("api");
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -37,49 +48,31 @@ describe("InvestmentsModule (integration)", () => {
     await prisma.$disconnect();
   });
 
-  afterEach(async () => {
-    await prisma.ledgerEntry.deleteMany();
-    await prisma.ledgerAccount.deleteMany();
-    await prisma.transaction.deleteMany();
-    await prisma.investment.deleteMany();
-    await prisma.milestone.deleteMany();
-    await prisma.mediaAsset.deleteMany();
-    await prisma.document.deleteMany();
-    await prisma.dueDiligenceTask.deleteMany();
-    await prisma.dueDiligenceCase.deleteMany();
-    await prisma.deal.deleteMany();
-    await prisma.project.deleteMany();
-    await prisma.userTenantMembership.deleteMany();
-    await prisma.investorProfile.deleteMany();
-    await prisma.entrepreneurProfile.deleteMany();
-    await prisma.assessorProfile.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.tenant.deleteMany();
-  });
-
   async function loginInvestor(): Promise<{
     accessToken: string;
     userId: string;
     tenantId: string;
   }> {
-    const { email, rawPassword, tenantId } = await userFactory.createWithMembership(
-      PlatformRole.INVESTOR,
-    );
+    const { email, rawPassword, tenantId } =
+      await userFactory.createWithMembership(PlatformRole.INVESTOR);
     const res = await request(app.getHttpServer())
       .post("/api/v1/auth/login")
       .send({ email, password: rawPassword })
       .expect(200);
-    return { accessToken: res.body.accessToken, userId: res.body.user.id, tenantId };
+    return {
+      accessToken: res.body.accessToken,
+      userId: res.body.user.id,
+      tenantId,
+    };
   }
 
   describe("POST /investments", () => {
     it("should create an investment with idempotency key", async () => {
-      const { accessToken, tenantId } = await loginInvestor();
-      const { id: projectId } = await projectFactory.create(
-        "owner-id",
-        tenantId,
-        { status: ProjectStatus.ACTIVE, fundingTarget: 1_000_000 },
-      );
+      const { accessToken, tenantId, userId } = await loginInvestor();
+      const { id: projectId } = await projectFactory.create(userId, tenantId, {
+        status: ProjectStatus.ACTIVE,
+        fundingTarget: 1_000_000,
+      });
 
       const idempotencyKey = `ik_${Date.now()}`;
       const res = await request(app.getHttpServer())
@@ -103,8 +96,11 @@ describe("InvestmentsModule (integration)", () => {
       });
       expect(investment).not.toBeNull();
 
+      const transaction = await prisma.transaction.findFirstOrThrow({
+        where: { investmentId: res.body.id },
+      });
       const ledgerEntries = await prisma.ledgerEntry.findMany({
-        where: { transactionId: res.body.id },
+        where: { transactionId: transaction.id },
       });
       expect(ledgerEntries.length).toBe(2);
 
@@ -118,12 +114,11 @@ describe("InvestmentsModule (integration)", () => {
     });
 
     it("should return existing investment for duplicate idempotency key", async () => {
-      const { accessToken, tenantId } = await loginInvestor();
-      const { id: projectId } = await projectFactory.create(
-        "owner-id",
-        tenantId,
-        { status: ProjectStatus.ACTIVE, fundingTarget: 1_000_000 },
-      );
+      const { accessToken, tenantId, userId } = await loginInvestor();
+      const { id: projectId } = await projectFactory.create(userId, tenantId, {
+        status: ProjectStatus.ACTIVE,
+        fundingTarget: 1_000_000,
+      });
 
       const idempotencyKey = `ik_dup_${Date.now()}`;
       const first = await request(app.getHttpServer())
@@ -144,16 +139,12 @@ describe("InvestmentsModule (integration)", () => {
     });
 
     it("should reject investment below minimum", async () => {
-      const { accessToken, tenantId } = await loginInvestor();
-      const { id: projectId } = await projectFactory.create(
-        "owner-id",
-        tenantId,
-        {
-          status: ProjectStatus.ACTIVE,
-          fundingTarget: 1_000_000,
-          minInvestment: 1000,
-        },
-      );
+      const { accessToken, tenantId, userId } = await loginInvestor();
+      const { id: projectId } = await projectFactory.create(userId, tenantId, {
+        status: ProjectStatus.ACTIVE,
+        fundingTarget: 1_000_000,
+        minInvestment: 1000,
+      });
 
       await request(app.getHttpServer())
         .post("/api/v1/investments")
@@ -164,12 +155,11 @@ describe("InvestmentsModule (integration)", () => {
     });
 
     it("should reject investment in non-investable project", async () => {
-      const { accessToken, tenantId } = await loginInvestor();
-      const { id: projectId } = await projectFactory.create(
-        "owner-id",
-        tenantId,
-        { status: ProjectStatus.DRAFT, fundingTarget: 1_000_000 },
-      );
+      const { accessToken, tenantId, userId } = await loginInvestor();
+      const { id: projectId } = await projectFactory.create(userId, tenantId, {
+        status: ProjectStatus.DRAFT,
+        fundingTarget: 1_000_000,
+      });
 
       await request(app.getHttpServer())
         .post("/api/v1/investments")
@@ -182,12 +172,11 @@ describe("InvestmentsModule (integration)", () => {
 
   describe("POST /investments/:id/cancel", () => {
     it("should cancel a pending investment and reverse ledger", async () => {
-      const { accessToken, tenantId } = await loginInvestor();
-      const { id: projectId } = await projectFactory.create(
-        "owner-id",
-        tenantId,
-        { status: ProjectStatus.ACTIVE, fundingTarget: 1_000_000 },
-      );
+      const { accessToken, tenantId, userId } = await loginInvestor();
+      const { id: projectId } = await projectFactory.create(userId, tenantId, {
+        status: ProjectStatus.ACTIVE,
+        fundingTarget: 1_000_000,
+      });
 
       const createRes = await request(app.getHttpServer())
         .post("/api/v1/investments")

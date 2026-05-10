@@ -6,7 +6,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "nx run-many -t build --projects=api,worker-events,worker-media,worker-compliance,scheduler,worker-notifications",
+    "build": "nx run-many -t build --projects=api,worker-events,worker-media,worker-compliance,scheduler,worker-notifications,worker-webhooks",
     "build:api": "nx build api",
     "format": "prettier --write \"{apps,libs,prisma,test}/**/*.ts\" \"*.json\"",
     "start": "node dist/apps/api/src/main.js",
@@ -16,6 +16,7 @@
     "start:worker-compliance": "node dist/apps/worker-compliance/src/main.js",
     "start:scheduler": "node dist/apps/scheduler/src/main.js",
     "start:worker-notifications": "node dist/apps/worker-notifications/src/main.js",
+    "start:worker-webhooks": "node dist/apps/worker-webhooks/src/main.js",
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "lint": "eslint \"{apps,libs,prisma,test}/**/*.ts\"",
     "test": "jest --runInBand --setupFilesAfterEnv=./test/setup.ts",

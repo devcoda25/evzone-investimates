@@ -260,6 +260,21 @@ class InvestmentsService {
         dto.amount,
         dto.currency ?? project.currency,
       );
+      await this.outbox.create(tx, {
+        tenantId: project.tenantId,
+        topic: "ledger.transaction_posted",
+        eventType: "ledger.transaction_posted",
+        aggregateType: "transaction",
+        aggregateId: transaction.id,
+        payload: {
+          transactionId: transaction.id,
+          investmentId: investment.id,
+          projectId: project.id,
+          amount: dto.amount,
+          currency: dto.currency ?? project.currency,
+          entryCount: 2,
+        },
+      });
       const newFundingRaised = Number(project.fundingRaised) + dto.amount;
       await tx.project.update({
         where: { id: project.id },
@@ -432,7 +447,10 @@ class InvestmentsService {
       include: { investor: true, project: true },
     });
     if (!investment) throw new NotFoundException("Investment not found");
-    if (investment.investorUserId !== user.id && !this.permissions.isPlatformAdmin(user)) {
+    if (
+      investment.investorUserId !== user.id &&
+      !this.permissions.isPlatformAdmin(user)
+    ) {
       throw new ForbiddenException("You can only check your own investments");
     }
 
@@ -469,7 +487,10 @@ class InvestmentsService {
     checks.push({
       name: "compliance_clear",
       passed: riskAlerts === 0,
-      message: riskAlerts === 0 ? undefined : `${riskAlerts} open compliance alerts exist`,
+      message:
+        riskAlerts === 0
+          ? undefined
+          : `${riskAlerts} open compliance alerts exist`,
     });
 
     // 4. Jurisdiction check

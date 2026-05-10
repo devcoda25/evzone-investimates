@@ -2,21 +2,14 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-beforeAll(async () => {
-  await prisma.$connect();
-});
-
-afterAll(async () => {
-  await prisma.$disconnect();
-});
-
-afterEach(async () => {
+async function cleanDatabase(): Promise<void> {
   // Clean up test data in reverse dependency order
   const tables = [
     "ledgerEntry",
     "ledgerAccount",
     "paymentTransaction",
     "paymentIntent",
+    "paymentWebhookEvent",
     "transaction",
     "investment",
     "milestone",
@@ -35,6 +28,7 @@ afterEach(async () => {
     "activityEvent",
     "watchlistItem",
     "paymentSchedule",
+    "notificationDispatch",
     "notification",
     "pushSubscription",
     "message",
@@ -55,14 +49,32 @@ afterEach(async () => {
 
   for (const table of tables) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      await (prisma as unknown as Record<string, { deleteMany: () => Promise<unknown> }>)[
-        table
-      ]?.deleteMany();
+      await (
+        prisma as unknown as Record<
+          string,
+          { deleteMany: () => Promise<unknown> }
+        >
+      )[table]?.deleteMany();
     } catch {
       // ignore cleanup errors for tables that may not exist in client
     }
   }
+}
+
+beforeAll(async () => {
+  await prisma.$connect();
 });
 
-export { prisma };
+afterAll(async () => {
+  await prisma.$disconnect();
+});
+
+beforeEach(async () => {
+  await cleanDatabase();
+});
+
+afterEach(async () => {
+  await cleanDatabase();
+});
+
+export { cleanDatabase, prisma };

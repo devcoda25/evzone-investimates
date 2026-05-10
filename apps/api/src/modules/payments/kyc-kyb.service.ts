@@ -42,7 +42,9 @@ export class KycKybService {
           `${provider} KYC adapter not implemented`,
         );
       default:
-        throw new BadRequestException(`Unknown KYC provider: ${String(provider)}`);
+        throw new BadRequestException(
+          `Unknown KYC provider: ${String(provider)}`,
+        );
     }
   }
 
@@ -77,9 +79,13 @@ export class KycKybService {
         status: KycApplicationStatus.PENDING,
         idType: input.idType as IdDocumentType,
         idNumber: input.idNumber,
-        idExpiryDate: input.idExpiryDate ? new Date(input.idExpiryDate) : undefined,
+        idExpiryDate: input.idExpiryDate
+          ? new Date(input.idExpiryDate)
+          : undefined,
         nationality: input.nationality,
-        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
+        dateOfBirth: input.dateOfBirth
+          ? new Date(input.dateOfBirth)
+          : undefined,
         submittedData: {
           reference,
           idType: input.idType,
@@ -232,7 +238,9 @@ export class KycKybService {
     if (adapter.verifyWebhookSignature && signature) {
       const verified = await adapter.verifyWebhookSignature(rawBody, signature);
       if (!verified) {
-        this.logger.warn(`KYC webhook signature verification failed for ${provider}`);
+        this.logger.warn(
+          `KYC webhook signature verification failed for ${provider}`,
+        );
         return { accepted: false };
       }
     }
@@ -267,9 +275,13 @@ export class KycKybService {
           status: newStatus,
           providerResult: payload as Prisma.InputJsonValue,
           verifiedAt:
-            newStatus === KycApplicationStatus.VERIFIED ? new Date() : undefined,
+            newStatus === KycApplicationStatus.VERIFIED
+              ? new Date()
+              : undefined,
           rejectedAt:
-            newStatus === KycApplicationStatus.REJECTED ? new Date() : undefined,
+            newStatus === KycApplicationStatus.REJECTED
+              ? new Date()
+              : undefined,
           rejectionReason:
             newStatus === KycApplicationStatus.REJECTED
               ? String(payload.rejection_reason ?? payload.reason ?? "Unknown")
@@ -281,6 +293,32 @@ export class KycKybService {
         await tx.user.update({
           where: { id: application.userId },
           data: { kycStatus: KycStatus.VERIFIED },
+        });
+        await this.outbox.create(tx, {
+          tenantId: application.tenantId,
+          topic: "kyc.verified",
+          eventType: "kyc.verified",
+          aggregateType: "kyc_application",
+          aggregateId: application.id,
+          payload: {
+            applicationId: application.id,
+            userId: application.userId,
+            provider,
+            status: newStatus,
+          },
+        });
+        await this.outbox.create(tx, {
+          tenantId: application.tenantId,
+          topic: "user.verified",
+          eventType: "user.verified",
+          aggregateType: "user",
+          aggregateId: application.userId,
+          payload: {
+            userId: application.userId,
+            applicationId: application.id,
+            provider,
+            kycStatus: KycStatus.VERIFIED,
+          },
         });
       } else if (newStatus === KycApplicationStatus.REJECTED) {
         await tx.complianceAlert.create({
@@ -295,27 +333,20 @@ export class KycKybService {
             description: `User ${application.userId} KYC rejected: ${String(payload.rejection_reason ?? payload.reason ?? "Unknown")}`,
           },
         });
+        await this.outbox.create(tx, {
+          tenantId: application.tenantId,
+          topic: "kyc.rejected",
+          eventType: "kyc.rejected",
+          aggregateType: "kyc_application",
+          aggregateId: application.id,
+          payload: {
+            applicationId: application.id,
+            userId: application.userId,
+            provider,
+            status: newStatus,
+          },
+        });
       }
-    });
-
-    await this.outbox.create(this.prisma, {
-      tenantId: application.tenantId,
-      topic:
-        newStatus === KycApplicationStatus.VERIFIED
-          ? "kyc.verified"
-          : "kyc.rejected",
-      eventType:
-        newStatus === KycApplicationStatus.VERIFIED
-          ? "kyc.verified"
-          : "kyc.rejected",
-      aggregateType: "kyc_application",
-      aggregateId: application.id,
-      payload: {
-        applicationId: application.id,
-        userId: application.userId,
-        provider,
-        status: newStatus,
-      },
     });
 
     return { accepted: true, applicationId: application.id };
@@ -330,7 +361,9 @@ export class KycKybService {
       include: { memberships: { select: { tenantId: true }, take: 1 } },
     });
     if (!user) throw new NotFoundException("User not found");
-    const userTenantId = (user.memberships[0]?.tenantId as string | undefined) ?? _requester.tenantId;
+    const userTenantId =
+      (user.memberships[0]?.tenantId as string | undefined) ??
+      _requester.tenantId;
     this.permissions.assertTenantAccess(_requester, userTenantId);
 
     const applications = await this.prisma.kycApplication.findMany({

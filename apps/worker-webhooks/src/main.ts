@@ -10,8 +10,12 @@ import {
   WebhookProcessingStatus,
 } from "@prisma/client";
 import { configuration } from "@evzone/config";
-import { PrismaModule, PrismaService, TransactionService } from "@evzone/database";
-import { OutboxService } from "@evzone/events";
+import {
+  PrismaModule,
+  PrismaService,
+  TransactionService,
+} from "@evzone/database";
+import { EventsModule, OutboxService } from "@evzone/events";
 import { FlutterwaveAdapter } from "../../api/src/modules/payments/flutterwave.adapter";
 import { PaytotaAdapter } from "../../api/src/modules/payments/paytota.adapter";
 import { LedgerPostingService } from "../../api/src/modules/payments/ledger-posting.service";
@@ -24,6 +28,7 @@ import { LedgerPostingService } from "../../api/src/modules/payments/ledger-post
       envFilePath: [".env", ".env.local"],
     }),
     PrismaModule,
+    EventsModule,
   ],
   providers: [FlutterwaveAdapter, PaytotaAdapter, LedgerPostingService],
 })
@@ -35,10 +40,9 @@ async function sleep(ms: number): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerWebhooks");
-  const app = await NestFactory.createApplicationContext(
-    WorkerWebhooksModule,
-    { logger: ["error", "warn", "log"] },
-  );
+  const app = await NestFactory.createApplicationContext(WorkerWebhooksModule, {
+    logger: ["error", "warn", "log"],
+  });
   const prisma = app.get(PrismaService);
   const transactions = app.get(TransactionService);
   const outbox = app.get(OutboxService);
@@ -54,7 +58,9 @@ async function bootstrap(): Promise<void> {
     void app.close();
   });
 
-  function getAdapter(provider: PaymentProvider): FlutterwaveAdapter | PaytotaAdapter {
+  function getAdapter(
+    provider: PaymentProvider,
+  ): FlutterwaveAdapter | PaytotaAdapter {
     switch (provider) {
       case PaymentProvider.FLUTTERWAVE:
         return flutterwave;
@@ -79,11 +85,12 @@ async function bootstrap(): Promise<void> {
 
         if (event.provider === PaymentProvider.FLUTTERWAVE) {
           intentRef =
-            (payload.data as Record<string, unknown>)?.tx_ref as string ?? null;
+            ((payload.data as Record<string, unknown>)?.tx_ref as string) ??
+            null;
         } else if (event.provider === PaymentProvider.PAYTOTA) {
           intentRef =
             (payload.reference as string) ??
-            (payload.data as Record<string, unknown>)?.reference as string ??
+            ((payload.data as Record<string, unknown>)?.reference as string) ??
             null;
         }
 
@@ -117,9 +124,7 @@ async function bootstrap(): Promise<void> {
         }
 
         if (!intent.providerTransactionId) {
-          logger.warn(
-            `Intent ${intent.id} has no provider transaction ID`,
-          );
+          logger.warn(`Intent ${intent.id} has no provider transaction ID`);
           await prisma.paymentWebhookEvent.update({
             where: { id: event.id },
             data: {

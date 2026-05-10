@@ -1,5 +1,9 @@
 import { Test } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from "@nestjs/common";
 import request from "supertest";
 import { PrismaClient, PlatformRole } from "@prisma/client";
 import { AppModule } from "../apps/api/src/app.module";
@@ -19,6 +23,8 @@ describe("AuthModule (integration)", () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    app.setGlobalPrefix("api");
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -32,17 +38,6 @@ describe("AuthModule (integration)", () => {
   afterAll(async () => {
     await app.close();
     await prisma.$disconnect();
-  });
-
-  afterEach(async () => {
-    await prisma.passwordResetToken.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.userTenantMembership.deleteMany();
-    await prisma.investorProfile.deleteMany();
-    await prisma.entrepreneurProfile.deleteMany();
-    await prisma.assessorProfile.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.tenant.deleteMany();
   });
 
   describe("POST /auth/register", () => {
@@ -145,7 +140,9 @@ describe("AuthModule (integration)", () => {
 
       const user = await prisma.user.findUnique({ where: { email } });
       expect(user?.lockoutUntil).not.toBeNull();
-      expect(user?.lockoutUntil != null && user.lockoutUntil > new Date()).toBe(true);
+      expect(user?.lockoutUntil != null && user.lockoutUntil > new Date()).toBe(
+        true,
+      );
     });
   });
 
