@@ -20,6 +20,12 @@ import { StorageModule, StorageService } from "@evzone/storage";
 })
 class WorkerMediaModule {}
 
+/**
+ * Pause execution for the specified number of milliseconds.
+ *
+ * @param ms - The delay duration in milliseconds
+ * @returns Nothing
+ */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -33,7 +39,14 @@ const ALLOWED_CONTENT_TYPES: string[] = [
   "application/pdf",
 ];
 
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; /**
+ * Start the media worker that validates queued uploaded media assets and advances their statuses.
+ *
+ * Runs a continuous loop that fetches media assets with status `UPLOADED`, validates each asset's
+ * content type, size (when provided), and presence in storage, updates the asset status to
+ * `READY` or `REJECTED` based on those checks, logs processing events, and terminates cleanly on
+ * `SIGTERM`.
+ */
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerMedia");

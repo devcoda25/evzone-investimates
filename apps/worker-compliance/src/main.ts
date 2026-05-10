@@ -25,6 +25,11 @@ import { PrismaModule, PrismaService } from "@evzone/database";
 })
 class WorkerComplianceModule {}
 
+/**
+ * Pause execution for the specified duration.
+ *
+ * @param ms - Delay duration in milliseconds
+ */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -34,6 +39,13 @@ interface ScreeningResult {
   flags: Array<{ type: string; message: string; severity: ComplianceAlertSeverity }>;
 }
 
+/**
+ * Start the compliance worker: create the Nest application context and continuously process open compliance cases.
+ *
+ * The worker retrieves PrismaService, polls for OPEN compliance cases in batches, runs screening on each case,
+ * and either auto-approves cases or creates compliance alerts and marks cases for manual review based on screening results.
+ * Registers a SIGTERM handler for graceful shutdown and sleeps between polling iterations to control loop cadence.
+ */
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerCompliance");
   const app = await NestFactory.createApplicationContext(
@@ -112,6 +124,15 @@ async function bootstrap(): Promise<void> {
   }
 }
 
+/**
+ * Performs automated compliance screening for a single compliance case and returns any flags requiring attention.
+ *
+ * Checks performed include: presence of the associated user, KYC verification, account suspension/blocked status,
+ * jurisdiction against a high-risk list (placeholder), and tenant open compliance alert volume.
+ *
+ * @param complianceCase - Object identifying the compliance case to screen (`id`, `tenantId`, and `userId`)
+ * @returns `ScreeningResult` containing `passed: true` when no flags were raised, and `flags` describing any detected issues
+ */
 async function runScreening(
   prisma: PrismaService,
   complianceCase: {
