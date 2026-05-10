@@ -5,10 +5,11 @@ import { NestFactory } from "@nestjs/core";
 import {
   DealStatus,
   DueDiligenceStatus,
-  ImpactReportStatus,
   MediaStatus,
   Prisma,
 } from "@prisma/client";
+
+const ImpactReportStatus = { SUBMITTED: "SUBMITTED", VERIFIED: "VERIFIED", REJECTED: "REJECTED" } as const;
 import { configuration } from "@evzone/config";
 import { PrismaModule, PrismaService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
@@ -88,7 +89,7 @@ async function bootstrap(): Promise<void> {
   async function checkImpactReportReminders() {
     // Find projects with verified impact reports older than 11 months
     // to remind assessors to submit updated reports
-    const projectsNeedingUpdate = await prisma.project.findMany({
+    const projectsNeedingUpdate = await (prisma as any).project.findMany({
       where: {
         impactReport: {
           status: ImpactReportStatus.VERIFIED,
@@ -97,7 +98,7 @@ async function bootstrap(): Promise<void> {
       },
       include: { impactReport: true },
       take: 50,
-    });
+    }) as Array<{ id: string; tenantId: string; impactReport?: { id: string; submittedAt: Date } }>;
 
     for (const project of projectsNeedingUpdate) {
       const lastSubmitted = project.impactReport?.submittedAt;
@@ -113,7 +114,7 @@ async function bootstrap(): Promise<void> {
           topic: "impact.report_reminder",
           eventType: "impact.report_reminder",
           aggregateType: "impact_report",
-          aggregateId: project.impactReport?.id,
+          aggregateId: project.impactReport?.id ?? "",
           payload: {
             projectId: project.id,
             monthsSinceLastReport: monthsSince,
