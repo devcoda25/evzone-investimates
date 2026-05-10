@@ -5,7 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { MediaStatus } from "@prisma/client";
 import { configuration } from "@evzone/config";
 import { PrismaModule, PrismaService } from "@evzone/database";
-import { StorageModule } from "@evzone/storage";
+import { StorageModule, StorageService } from "@evzone/storage";
 
 @Module({
   imports: [
@@ -24,12 +24,24 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const ALLOWED_CONTENT_TYPES: string[] = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "application/pdf",
+];
+
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
+
 async function bootstrap(): Promise<void> {
   const logger = new Logger("WorkerMedia");
   const app = await NestFactory.createApplicationContext(WorkerMediaModule, {
     logger: ["error", "warn", "log"],
   });
   const prisma = app.get(PrismaService);
+  const storage = app.get(StorageService);
   logger.log("Media worker started");
   let running = true;
 
@@ -44,13 +56,62 @@ async function bootstrap(): Promise<void> {
       take: 25,
       orderBy: { createdAt: "asc" },
     });
+
     for (const asset of assets) {
-      await prisma.mediaAsset.update({
-        where: { id: asset.id },
-        data: { status: MediaStatus.READY },
-      });
-      logger.log(`Marked media asset ready: ${asset.id}`);
+      try {
+        // 1. Validate content type
+        if (!ALLOWED_CONTENT_TYPES.includes(asset.contentType)) {
+          logger.warn(
+            `Rejected media ${asset.id}: unsupported content type ${asset.contentType}`,
+          );
+          await prisma.mediaAsset.update({
+            where: { id: asset.id },
+            data: { status: MediaStatus.REJECTED },
+          });
+          continue;
+        }
+
+        // 2. Validate size if known
+        if (asset.sizeBytes && asset.sizeBytes > MAX_FILE_SIZE_BYTES) {
+          logger.warn(
+            `Rejected media ${asset.id}: size ${asset.sizeBytes} exceeds limit`,
+          );
+          await prisma.mediaAsset.update({
+            where: { id: asset.id },
+            data: { status: MediaStatus.REJECTED },
+          });
+          continue;
+        }
+
+        // 3. Verify object exists in storage
+        try {
+          await storage.createReadUrl(asset.objectKey);
+        } catch (verifyError: unknown) {
+          logger.warn(
+            `Media ${asset.id} not found in storage: ${
+              verifyError instanceof Error ? verifyError.message : "unknown"
+            }`,
+          );
+          await prisma.mediaAsset.update({
+            where: { id: asset.id },
+            data: { status: MediaStatus.REJECTED },
+          });
+          continue;
+        }
+
+        // 4. Mark ready
+        await prisma.mediaAsset.update({
+          where: { id: asset.id },
+          data: { status: MediaStatus.READY },
+        });
+        logger.log(`Marked media asset ready: ${asset.id}`);
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        logger.error(`Failed to process media ${asset.id}: ${message}`);
+      }
     }
+
     await sleep(assets.length > 0 ? 500 : 5_000);
   }
 }

@@ -34,8 +34,25 @@ async function bootstrap(): Promise<void> {
     config.get<string>("app.frontendAdminUrl"),
   ].filter((value): value is string => Boolean(value));
 
+  const isLocalhost = (url: string): boolean => {
+    try {
+      return new URL(url).hostname === "localhost";
+    } catch {
+      return false;
+    }
+  };
+
   app.enableCors({
-    origin: nodeEnv === "production" ? corsOrigins : true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      // Allow configured origins and localhost in development
+      const allowed = corsOrigins.some(
+        (o) => o === origin || (nodeEnv === "development" && isLocalhost(origin)),
+      );
+      if (allowed) return callback(null, true);
+      callback(new Error(`CORS blocked origin: ${origin}`));
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [

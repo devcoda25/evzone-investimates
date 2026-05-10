@@ -81,8 +81,29 @@ export const storageConfig = registerAs("storage", () => ({
 
 export const kycConfig = registerAs("kyc", () => ({
   smileIdentityApiKey: optionalString(process.env.SMILE_IDENTITY_API_KEY, ""),
-  smileIdentityPartnerId: optionalString(process.env.SMILE_IDENTITY_PARTNER_ID, ""),
-  smileIdentityWebhookSecret: optionalString(process.env.SMILE_IDENTITY_WEBHOOK_SECRET, ""),
+  smileIdentityPartnerId: optionalString(
+    process.env.SMILE_IDENTITY_PARTNER_ID,
+    "",
+  ),
+  smileIdentityWebhookSecret: optionalString(
+    process.env.SMILE_IDENTITY_WEBHOOK_SECRET,
+    "",
+  ),
+}));
+
+export const paymentConfig = registerAs("payment", () => ({
+  defaultProvider: optionalString(
+    process.env.PAYMENT_DEFAULT_PROVIDER,
+    "FLUTTERWAVE",
+  ),
+  callbackBaseUrl: optionalString(process.env.PAYMENT_CALLBACK_BASE_URL, ""),
+}));
+
+export const databaseConfig = registerAs("database", () => ({
+  url: optionalString(process.env.DATABASE_URL, ""),
+  directUrl: optionalString(process.env.DIRECT_URL, ""),
+  connectionLimit: optionalNumber(process.env.DB_CONNECTION_LIMIT, 20),
+  poolTimeout: optionalNumber(process.env.DB_POOL_TIMEOUT, 10),
 }));
 
 export const configuration = [
@@ -92,4 +113,6 @@ export const configuration = [
   redisConfig,
   storageConfig,
   kycConfig,
+  paymentConfig,
+  databaseConfig,
 ];

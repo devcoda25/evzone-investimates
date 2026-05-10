@@ -20,6 +20,7 @@ import {
   ComplianceAlertType,
   DisputeStatus,
   DisputeType,
+  KycApplicationStatus,
   KycStatus,
   MembershipStatus,
   PlatformRole,
@@ -863,7 +864,7 @@ class AdminService {
       this.prisma.kycApplication.findMany({
         where: {
           tenantId: tenantWhere.tenantId as string,
-          status: { in: ["PENDING" as any, "SUBMITTED" as any, "PROCESSING" as any] },
+          status: { in: [KycApplicationStatus.PENDING, KycApplicationStatus.SUBMITTED, KycApplicationStatus.PROCESSING] },
         },
         include: {
           user: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -874,7 +875,7 @@ class AdminService {
       this.prisma.kycApplication.findMany({
         where: {
           tenantId: tenantWhere.tenantId as string,
-          status: "REJECTED" as any,
+          status: KycApplicationStatus.REJECTED,
         },
         include: {
           user: { select: { id: true, firstName: true, lastName: true, email: true } },

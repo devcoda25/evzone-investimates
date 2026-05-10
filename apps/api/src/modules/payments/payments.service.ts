@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  InvestmentStatus,
   PaymentDirection,
   PaymentProvider,
   PaymentStatus,
@@ -89,7 +90,7 @@ export class PaymentIntentsService {
       case PaymentProvider.PAYTOTA:
         return this.paytota;
       default:
-        throw new BadRequestException(`Unknown payment provider: ${provider}`);
+        throw new BadRequestException(`Unknown payment provider: ${String(provider)}`);
     }
   }
 
@@ -219,7 +220,7 @@ export class PaymentIntentsService {
       intent.providerTransactionId,
     );
 
-    const paymentTransaction = await this.transactions.run(async (tx) => {
+    await this.transactions.run(async (tx) => {
       const txRecord = await tx.paymentTransaction.create({
         data: {
           tenantId: intent.tenantId,
@@ -250,7 +251,7 @@ export class PaymentIntentsService {
       if (intent.investmentId && verification.status === PaymentStatus.SUCCEEDED) {
         await tx.investment.update({
           where: { id: intent.investmentId },
-          data: { status: "CONFIRMED" as any },
+          data: { status: InvestmentStatus.CONFIRMED },
         });
       }
 
@@ -290,14 +291,14 @@ export class PayoutsService {
     private readonly permissions: PermissionsService,
   ) {}
 
-  private getAdapter(provider: PaymentProvider) {
+  private getAdapter(provider: PaymentProvider): PaymentProviderAdapter {
     switch (provider) {
       case PaymentProvider.FLUTTERWAVE:
         return this.flutterwave;
       case PaymentProvider.PAYTOTA:
         return this.paytota;
       default:
-        throw new BadRequestException(`Unknown payment provider: ${provider}`);
+        throw new BadRequestException(`Unknown payment provider: ${String(provider)}`);
     }
   }
 
@@ -445,7 +446,7 @@ export class PaymentWebhooksService {
     // 2. Parse payload
     let payload: Record<string, unknown>;
     try {
-      payload = JSON.parse(rawBody);
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
       throw new BadRequestException("Invalid webhook JSON payload");
     }
@@ -672,7 +673,7 @@ export class ReconciliationService {
                 entityType: "payment_intent",
                 entityId: intent.id,
                 title: "Ledger Reconciliation Discrepancy",
-                description: `Provider amount ${providerAmount} vs ledger sum ${ledgerAmount} (diff: ${diff}) for intent ${intent.id}`,
+                description: `Provider amount ${providerAmount.toString()} vs ledger sum ${ledgerAmount.toString()} (diff: ${diff.toString()}) for intent ${intent.id}`,
               },
             });
           }

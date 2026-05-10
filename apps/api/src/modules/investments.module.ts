@@ -46,6 +46,7 @@ import {
 import { PrismaService, TransactionService } from "@evzone/database";
 import { OutboxService } from "@evzone/events";
 import { PermissionsService } from "@evzone/permissions";
+import { AuditService } from "@evzone/audit";
 import { PaymentIntentsService } from "./payments/payments.service";
 import { PaymentsModule } from "./payments/payments.module";
 
@@ -176,6 +177,7 @@ class InvestmentsService {
     private readonly outbox: OutboxService,
     private readonly permissions: PermissionsService,
     private readonly paymentIntents: PaymentIntentsService,
+    private readonly audit: AuditService,
   ) {}
 
   async invest(
@@ -395,7 +397,7 @@ class InvestmentsService {
     return this.toInvestmentResponse(updated);
   }
 
-  async confirm(id: string): Promise<unknown> {
+  async confirm(id: string, admin: AuthenticatedUser): Promise<unknown> {
     const investment = await this.prisma.investment.update({
       where: { id },
       data: { status: InvestmentStatus.CONFIRMED, confirmedAt: new Date() },
@@ -404,6 +406,19 @@ class InvestmentsService {
     await this.prisma.transaction.updateMany({
       where: { investmentId: id, type: TransactionType.INVESTMENT },
       data: { status: TransactionStatus.COMPLETED, processedAt: new Date() },
+    });
+    await this.audit.record({
+      tenantId: investment.tenantId,
+      userId: admin.id,
+      action: "investment.confirmed",
+      entityType: "investment",
+      entityId: id,
+      newValues: {
+        status: InvestmentStatus.CONFIRMED,
+        amount: investment.amount.toString(),
+        investorUserId: investment.investorUserId,
+        projectId: investment.projectId,
+      },
     });
     return this.toInvestmentResponse(investment);
   }
@@ -1018,8 +1033,11 @@ class InvestmentsController {
 
   @Post(":id/confirm")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  confirm(@Param("id") id: string): Promise<unknown> {
-    return this.investmentsService.confirm(id);
+  confirm(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.investmentsService.confirm(id, user);
   }
 
   @Post(":id/compliance-check")

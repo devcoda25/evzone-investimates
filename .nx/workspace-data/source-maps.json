@@ -284,5 +284,113 @@
       "nx.json",
       "nx/target-defaults"
     ]
+  },
+  "apps/worker-notifications": {
+    "root": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/worker-notifications/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
+  "apps/worker-webhooks": {
+    "root": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "$schema": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "sourceRoot": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "projectType": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.command": [
+      "apps/worker-webhooks/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.outputs": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
   }
 }

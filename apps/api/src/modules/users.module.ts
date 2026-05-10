@@ -30,6 +30,7 @@ import {
 import { OwnerOrAdminGuard } from "@evzone/auth";
 import { PrismaService } from "@evzone/database";
 import { PermissionsService } from "@evzone/permissions";
+import { AuditService } from "@evzone/audit";
 
 interface UserResponse {
   id: string;
@@ -224,6 +225,7 @@ class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly audit: AuditService,
   ) {}
 
   async findAll(
@@ -438,7 +440,9 @@ class UsersService {
     return this.toResponse(updated);
   }
 
-  async suspend(id: string): Promise<UserResponse> {
+  async suspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: UserStatus.SUSPENDED },
@@ -449,10 +453,21 @@ class UsersService {
         assessorProfile: true,
       },
     });
+    await this.audit.record({
+      tenantId: currentUser.tenantId,
+      userId: currentUser.id,
+      action: "user.suspended",
+      entityType: "user",
+      entityId: id,
+      oldValues: { status: user.status },
+      newValues: { status: UserStatus.SUSPENDED },
+    });
     return this.toResponse(updated);
   }
 
-  async unsuspend(id: string): Promise<UserResponse> {
+  async unsuspend(id: string, currentUser: AuthenticatedUser): Promise<UserResponse> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException("User not found");
     const updated = await this.prisma.user.update({
       where: { id },
       data: { status: UserStatus.ACTIVE },
@@ -462,6 +477,15 @@ class UsersService {
         entrepreneurProfile: true,
         assessorProfile: true,
       },
+    });
+    await this.audit.record({
+      tenantId: currentUser.tenantId,
+      userId: currentUser.id,
+      action: "user.unsuspended",
+      entityType: "user",
+      entityId: id,
+      oldValues: { status: user.status },
+      newValues: { status: UserStatus.ACTIVE },
     });
     return this.toResponse(updated);
   }
@@ -696,14 +720,20 @@ class UsersController {
 
   @Post(":id/suspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  suspend(@Param("id") id: string): Promise<UserResponse> {
-    return this.usersService.suspend(id);
+  suspend(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    return this.usersService.suspend(id, user);
   }
 
   @Post(":id/unsuspend")
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
-  unsuspend(@Param("id") id: string): Promise<UserResponse> {
-    return this.usersService.unsuspend(id);
+  unsuspend(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    return this.usersService.unsuspend(id, user);
   }
 
   @Get(":id/profile")

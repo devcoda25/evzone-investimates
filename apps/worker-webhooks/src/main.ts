@@ -3,6 +3,7 @@ import { Logger, Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import {
+  InvestmentStatus,
   PaymentProvider,
   PaymentStatus,
   Prisma,
@@ -53,14 +54,14 @@ async function bootstrap(): Promise<void> {
     void app.close();
   });
 
-  function getAdapter(provider: PaymentProvider) {
+  function getAdapter(provider: PaymentProvider): FlutterwaveAdapter | PaytotaAdapter {
     switch (provider) {
       case PaymentProvider.FLUTTERWAVE:
         return flutterwave;
       case PaymentProvider.PAYTOTA:
         return paytota;
       default:
-        throw new Error(`Unknown provider: ${provider}`);
+        throw new Error(`Unknown provider: ${String(provider)}`);
     }
   }
 
@@ -169,7 +170,7 @@ async function bootstrap(): Promise<void> {
           ) {
             await tx.investment.update({
               where: { id: intent.investmentId },
-              data: { status: "CONFIRMED" as any },
+              data: { status: InvestmentStatus.CONFIRMED },
             });
           }
 

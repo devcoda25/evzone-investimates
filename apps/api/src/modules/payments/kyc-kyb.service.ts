@@ -8,6 +8,7 @@ import {
   ComplianceAlertSeverity,
   ComplianceAlertStatus,
   ComplianceAlertType,
+  IdDocumentType,
   KycApplicationStatus,
   KycProvider,
   KycStatus,
@@ -31,7 +32,7 @@ export class KycKybService {
     private readonly outbox: OutboxService,
   ) {}
 
-  private getKycAdapter(provider: KycProvider) {
+  private getKycAdapter(provider: KycProvider): SmileIdentityAdapter {
     switch (provider) {
       case KycProvider.SMILE_IDENTITY:
         return this.smileIdentity;
@@ -41,7 +42,7 @@ export class KycKybService {
           `${provider} KYC adapter not implemented`,
         );
       default:
-        throw new BadRequestException(`Unknown KYC provider: ${provider}`);
+        throw new BadRequestException(`Unknown KYC provider: ${String(provider)}`);
     }
   }
 
@@ -74,7 +75,7 @@ export class KycKybService {
         provider,
         providerReference: reference,
         status: KycApplicationStatus.PENDING,
-        idType: input.idType as any,
+        idType: input.idType as IdDocumentType,
         idNumber: input.idNumber,
         idExpiryDate: input.idExpiryDate ? new Date(input.idExpiryDate) : undefined,
         nationality: input.nationality,
@@ -322,15 +323,15 @@ export class KycKybService {
 
   async getKycStatus(
     userId: string,
-    requester: AuthenticatedUser,
+    _requester: AuthenticatedUser,
   ): Promise<unknown> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { memberships: { select: { tenantId: true }, take: 1 } },
     });
     if (!user) throw new NotFoundException("User not found");
-    const userTenantId = user.memberships[0]?.tenantId ?? requester.tenantId;
-    this.permissions.assertTenantAccess(requester, userTenantId);
+    const userTenantId = (user.memberships[0]?.tenantId as string | undefined) ?? _requester.tenantId;
+    this.permissions.assertTenantAccess(_requester, userTenantId);
 
     const applications = await this.prisma.kycApplication.findMany({
       where: { userId },
@@ -358,7 +359,7 @@ export class KycKybService {
 
   async getKybStatus(
     userId: string | undefined,
-    requester: AuthenticatedUser,
+    _requester: AuthenticatedUser,
   ): Promise<unknown> {
     const where = userId ? { userId } : {};
     const applications = await this.prisma.kybApplication.findMany({

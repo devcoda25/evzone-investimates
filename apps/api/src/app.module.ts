@@ -26,6 +26,7 @@ import { WatchlistModule } from "./modules/watchlist.module";
 import { ActivityModule } from "./modules/activity.module";
 import { AiAdvisorModule } from "./modules/ai-advisor.module";
 import { VotesModule } from "./modules/votes.module";
+import { HealthModule } from "./modules/health.module";
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { VotesModule } from "./modules/votes.module";
     ActivityModule,
     AiAdvisorModule,
     VotesModule,
+    HealthModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
