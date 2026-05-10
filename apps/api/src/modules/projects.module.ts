@@ -100,6 +100,12 @@ interface ProjectResponse {
   dueDiligenceStatus: string;
   dueDiligenceScore: number | null;
   assessorAssignedId: string | null;
+  reviewerId: string | null;
+  environmentalScore: number | null;
+  statusChangedAt: Date | null;
+  committeeVotes: Prisma.JsonValue | null;
+  reviewerNotes: Prisma.JsonValue | null;
+  daysInStage: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -600,7 +606,7 @@ export class ProjectsService {
     const updated = await this.transactions.run(async (tx) => {
       const result = await tx.project.update({
         where: { id },
-        data: { status: ProjectStatus.UNDER_REVIEW },
+        data: { status: ProjectStatus.UNDER_REVIEW, statusChangedAt: new Date() },
         include: { gallery: true, dueDiligence: true },
       });
       await this.outbox.create(tx, {
@@ -628,6 +634,7 @@ export class ProjectsService {
 
   async approve(id: string, user: AuthenticatedUser): Promise<ProjectResponse> {
     const project = await this.getProjectForAccess(id, user);
+    const existingVotes = Array.isArray(project.committeeVotes) ? project.committeeVotes : [];
     const updated = await this.transitionProject(
       id,
       ProjectStatus.ACTIVE,
@@ -635,12 +642,20 @@ export class ProjectsService {
       "project.approved",
       user,
       project.status,
+      {
+        reviewerId: user.id,
+        committeeVotes: [
+          ...existingVotes,
+          { member: `${user.firstName} ${user.lastName}`, vote: "approved", comment: "", date: new Date().toISOString() },
+        ],
+      },
     );
     return this.toResponse(updated);
   }
 
   async reject(id: string, user: AuthenticatedUser): Promise<ProjectResponse> {
     const project = await this.getProjectForAccess(id, user);
+    const existingNotes = Array.isArray(project.reviewerNotes) ? project.reviewerNotes : [];
     const updated = await this.transitionProject(
       id,
       ProjectStatus.REJECTED,
@@ -648,6 +663,13 @@ export class ProjectsService {
       "project.rejected",
       user,
       project.status,
+      {
+        reviewerId: user.id,
+        reviewerNotes: [
+          ...existingNotes,
+          { reviewer: `${user.firstName} ${user.lastName}`, date: new Date().toISOString(), note: "Project rejected", stage: project.status },
+        ],
+      },
     );
     return this.toResponse(updated);
   }
@@ -668,6 +690,7 @@ export class ProjectsService {
         "Can only request revision for projects under review",
       );
     }
+    const existingNotes = Array.isArray(project.reviewerNotes) ? project.reviewerNotes : [];
     const updated = await this.transactions.run(async (tx) => {
       const result = await tx.project.update({
         where: { id },
@@ -675,6 +698,12 @@ export class ProjectsService {
           status: ProjectStatus.DRAFT,
           revisionNotes: dto.notes,
           revisionRequestedAt: new Date(),
+          statusChangedAt: new Date(),
+          reviewerId: user.id,
+          reviewerNotes: [
+            ...existingNotes,
+            { reviewer: `${user.firstName} ${user.lastName}`, date: new Date().toISOString(), note: dto.notes, stage: project.status },
+          ],
         },
         include: { gallery: true, dueDiligence: true },
       });
@@ -1088,13 +1117,14 @@ export class ProjectsService {
     eventType: string,
     user: AuthenticatedUser,
     oldStatus: ProjectStatus,
+    extraData?: Partial<Prisma.ProjectUncheckedUpdateInput>,
   ): Promise<
     Prisma.ProjectGetPayload<{ include: { gallery: true; dueDiligence: true } }>
   > {
     return this.transactions.run(async (tx) => {
       const updated = await tx.project.update({
         where: { id },
-        data: { status },
+        data: { status, statusChangedAt: new Date(), ...extraData },
         include: { gallery: true, dueDiligence: true },
       });
       await this.outbox.create(tx, {
@@ -1241,6 +1271,14 @@ export class ProjectsService {
       dueDiligenceStatus: project.dueDiligence?.status ?? "NOT_STARTED",
       dueDiligenceScore: project.dueDiligence?.riskScore ?? null,
       assessorAssignedId: project.dueDiligence?.assignedAssessorId ?? null,
+      reviewerId: project.reviewerId ?? null,
+      environmentalScore: project.environmentalScore ?? null,
+      statusChangedAt: project.statusChangedAt ?? null,
+      committeeVotes: project.committeeVotes ?? null,
+      reviewerNotes: project.reviewerNotes ?? null,
+      daysInStage: project.statusChangedAt
+        ? Math.floor((Date.now() - project.statusChangedAt.getTime()) / (1000 * 60 * 60 * 24))
+        : null,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
     };

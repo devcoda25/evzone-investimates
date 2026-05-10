@@ -95,6 +95,13 @@ enum AssessorAvailability {
   ON_LEAVE
 }
 
+enum AssessorAccreditationStatus {
+  ACCREDITED
+  PENDING
+  SUSPENDED
+  UNDER_REVIEW
+}
+
 enum GreenSector {
   SOLAR
   WIND
@@ -485,6 +492,7 @@ model AssessorProfile {
   insuranceValid      Boolean              @default(false)
   tier                String               @default("Bronze")
   avgTurnaround       Int?
+  accreditationStatus AssessorAccreditationStatus @default(PENDING)
 
   user                User @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedCases       DueDiligenceCase[]   @relation("AssignedAssessor")
@@ -573,6 +581,11 @@ model Project {
   featuredOrder   Int?
   revisionNotes   String?
   revisionRequestedAt DateTime?
+  reviewerId      String?
+  environmentalScore Int?
+  statusChangedAt DateTime?
+  committeeVotes  Json?
+  reviewerNotes   Json?
 
   tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   owner           User   @relation("ProjectOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
@@ -1151,6 +1164,9 @@ model Dispute {
   evidence    Json?
   resolution  String?
   resolvedAt  DateTime?
+  priority    String?   @default("medium")
+  financialImpact Decimal? @db.Decimal(18, 2)
+  assignedTo  String?
 
   initiator   User @relation(fields: [initiatorId], references: [id], onDelete: Restrict)
 
@@ -1173,6 +1189,7 @@ model AuditLog {
   metadata    Json?
   ipAddress   String?
   userAgent   String?
+  jurisdiction String?
 
   user        User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
