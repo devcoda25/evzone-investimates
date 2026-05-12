@@ -1,7 +1,7 @@
 import { Injectable, ExecutionContext, ForbiddenException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { AuthenticatedUser, RequestWithUser } from "@evzone/common";
-import { PermissionsService } from "@evzone/permissions";
+import { PermissionsService } from "./permissions.service";
 
 /**
  * TenantGuard ensures that all requests are scoped to the user's tenant.
