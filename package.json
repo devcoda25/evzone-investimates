@@ -17,7 +17,7 @@
     "start:scheduler": "node dist/apps/scheduler/src/main.js",
     "start:worker-notifications": "node dist/apps/worker-notifications/src/main.js",
     "start:worker-webhooks": "node dist/apps/worker-webhooks/src/main.js",
-    "seed": "node prisma/seed.js",
+    "seed": "node seed.js",
     "lint": "eslint \"{apps,libs,prisma,test}/**/*.ts\"",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
