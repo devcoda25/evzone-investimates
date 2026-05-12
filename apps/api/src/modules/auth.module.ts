@@ -311,12 +311,17 @@ class AuthService {
   }
 
   async refresh(dto: RefreshDto): Promise<AuthTokenResponse> {
-    const payload = await this.jwt.verifyAsync<JwtRefreshPayload>(
-      dto.refreshToken,
-      {
-        secret: this.config.get<string>("jwt.refreshSecret"),
-      },
-    );
+    let payload: JwtRefreshPayload;
+    try {
+      payload = await this.jwt.verifyAsync<JwtRefreshPayload>(
+        dto.refreshToken,
+        {
+          secret: this.config.get<string>("jwt.refreshSecret"),
+        },
+      );
+    } catch {
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
     const tokenHash = this.hashToken(dto.refreshToken);
     const stored = await this.prisma.refreshToken.findFirst({
       where: {
