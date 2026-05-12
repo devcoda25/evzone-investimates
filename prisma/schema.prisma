@@ -352,6 +352,7 @@ model Tenant {
   type        TenantType   @default(ORGANIZATION)
   countryCode String?
   status      TenantStatus @default(ACTIVE)
+  settings    Json?
 
   users       UserTenantMembership[]
   projects    Project[]
@@ -387,6 +388,7 @@ model User {
   assessorProfile     AssessorProfile?
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  apiKeys             ApiKey[]
   ownedProjects       Project[]          @relation("ProjectOwner")
   investments         Investment[]       @relation("InvestorInvestments")
   notifications       Notification[]
@@ -530,6 +532,21 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String
+  name        String
+  keyHash     String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Project {

@@ -11,8 +11,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
 import {
@@ -1052,6 +1054,113 @@ export class AdminService {
     };
   }
 
+  private toCsv(rows: Array<Record<string, unknown>>): string {
+    if (rows.length === 0) return "";
+    const headers = Object.keys(rows[0]);
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.join(","),
+      ...rows.map((row) => headers.map((h) => escape(row[h])).join(",")),
+    ];
+    return lines.join("\n");
+  }
+
+  async exportData(user: AuthenticatedUser): Promise<{ filename: string; csv: string }> {
+    const tenantWhere = this.getTenantWhere(user);
+
+    const [users, transactions, projects] = await Promise.all([
+      this.prisma.user.findMany({
+        where: tenantWhere,
+        include: { memberships: { select: { role: true }, take: 1 } },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+      this.prisma.transaction.findMany({
+        where: tenantWhere,
+        select: { id: true, type: true, amount: true, currency: true, status: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+      this.prisma.project.findMany({
+        where: { ...tenantWhere, deletedAt: null },
+        select: { id: true, title: true, sector: true, status: true, fundingTarget: true, currency: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+    ]);
+
+    const userRows = users.map((u) => ({
+      entity: "user",
+      id: u.id,
+      email: u.email,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      status: u.status,
+      kycStatus: u.kycStatus,
+      role: u.memberships[0]?.role ?? "",
+      createdAt: u.createdAt.toISOString(),
+    }));
+
+    const txRows = transactions.map((t) => ({
+      entity: "transaction",
+      id: t.id,
+      type: t.type,
+      amount: t.amount.toString(),
+      currency: t.currency,
+      status: t.status,
+      createdAt: t.createdAt.toISOString(),
+    }));
+
+    const projectRows = projects.map((p) => ({
+      entity: "project",
+      id: p.id,
+      title: p.title,
+      sector: p.sector,
+      status: p.status,
+      fundingTarget: p.fundingTarget.toString(),
+      currency: p.currency,
+      createdAt: p.createdAt.toISOString(),
+    }));
+
+    return {
+      filename: `evzone-export-${new Date().toISOString().split("T")[0]}.csv`,
+      csv: this.toCsv([...userRows, ...txRows, ...projectRows]),
+    };
+  }
+
+  async exportAuditLogs(user: AuthenticatedUser): Promise<{ filename: string; csv: string }> {
+    const tenantWhere = this.getTenantWhere(user);
+    const logs = await this.prisma.auditLog.findMany({
+      where: tenantWhere,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10000,
+    });
+
+    const rows = logs.map((l) => ({
+      id: l.id,
+      timestamp: l.createdAt.toISOString(),
+      user: l.user ? `${l.user.firstName} ${l.user.lastName}`.trim() : "System",
+      email: l.user?.email ?? "",
+      action: l.action,
+      entityType: l.entityType,
+      entityId: l.entityId,
+      ipAddress: l.ipAddress ?? "",
+    }));
+
+    return {
+      filename: `evzone-audit-logs-${new Date().toISOString().split("T")[0]}.csv`,
+      csv: this.toCsv(rows),
+    };
+  }
+
   async getLedgerReconciliationReport(
     user: AuthenticatedUser,
     dto?: ReportDateRangeDto,
@@ -1324,6 +1433,28 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
     return this.adminService.findKycCases(user, status);
+  }
+
+  @Get("export/data")
+  async exportData(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, csv } = await this.adminService.exportData(user);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
+  @Get("export/audit-logs")
+  async exportAuditLogs(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, csv } = await this.adminService.exportAuditLogs(user);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
 }

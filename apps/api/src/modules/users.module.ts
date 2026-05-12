@@ -16,7 +16,9 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { IsEmail, IsEnum, IsInt, IsNumber, IsOptional, IsString } from "class-validator";
-import { EntrepreneurStage, InvestorType, KycStatus, PlatformRole, Prisma, RiskTolerance, UserStatus } from "@prisma/client";
+import { EntrepreneurStage, InvestorType, KycStatus, MembershipStatus, PlatformRole, Prisma, RiskTolerance, UserStatus } from "@prisma/client";
+import { randomBytes } from "crypto";
+import * as bcrypt from "bcrypt";
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -212,6 +214,24 @@ class UpdateInvestorProfileDto {
 
   @IsOptional()
   preferredSectors?: string[];
+}
+
+class InviteUserDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  firstName!: string;
+
+  @IsString()
+  lastName!: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsEnum(PlatformRole)
+  role!: PlatformRole;
 }
 
 interface UserStatsResponse {
@@ -647,6 +667,60 @@ class UsersService {
     return this.toResponse(updated!);
   }
 
+  async inviteUser(
+    dto: InviteUserDto,
+    currentUser: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    if (!this.permissions.isPlatformAdmin(currentUser)) {
+      throw new BadRequestException("Only platform admins can invite users");
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
+    if (existing) throw new BadRequestException("User with this email already exists");
+
+    const tempPassword = randomBytes(16).toString("hex");
+    const bcryptRounds = 12;
+    const passwordHash = await bcrypt.hash(tempPassword, bcryptRounds);
+
+    const created = await this.prisma.user.create({
+      data: {
+        email: dto.email.toLowerCase(),
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+        kycStatus: KycStatus.VERIFIED,
+        memberships: {
+          create: {
+            tenantId: currentUser.tenantId,
+            role: dto.role,
+            status: MembershipStatus.ACTIVE,
+          },
+        },
+      },
+      include: {
+        memberships: true,
+        investorProfile: true,
+        entrepreneurProfile: true,
+        assessorProfile: true,
+      },
+    });
+
+    await this.audit.record({
+      tenantId: currentUser.tenantId,
+      userId: currentUser.id,
+      action: "user.invited",
+      entityType: "user",
+      entityId: created.id,
+      newValues: { email: dto.email, role: dto.role },
+    });
+
+    return this.toResponse(created);
+  }
+
   private buildUserWhere(
     filter: UserFilterDto,
     currentUser: AuthenticatedUser,
@@ -896,6 +970,16 @@ class UsersController {
         notifications: dto.preferences as Prisma.InputJsonValue,
       },
     }, user);
+  }
+
+  @Post("invite")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  @HttpCode(HttpStatus.CREATED)
+  inviteUser(
+    @Body() dto: InviteUserDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserResponse> {
+    return this.usersService.inviteUser(dto, user);
   }
 }
 
