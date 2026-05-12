@@ -16,11 +16,13 @@ import {
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
 import {
+  AssessorAccreditationStatus,
   ComplianceAlertSeverity,
   ComplianceAlertStatus,
   ComplianceAlertType,
   DisputeStatus,
   DisputeType,
+  DueDiligenceStatus,
   KycApplicationStatus,
   KycStatus,
   MembershipStatus,
@@ -85,6 +87,14 @@ class ResolveDisputeDto {
   @IsOptional()
   @IsString()
   resolution?: string;
+
+  @IsOptional()
+  @IsString()
+  priority?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedTo?: string;
 }
 
 class AuditLogFilterDto extends PaginationDto {
@@ -125,6 +135,21 @@ class RiskAssessmentDto {
   @IsOptional()
   @IsString()
   mitigationPlan?: string;
+}
+
+class StressTestScenarioDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  interestRateShock?: number;
+
+  @IsOptional()
+  defaultRateShock?: number;
+
+  @IsOptional()
+  marketDeclinePercent?: number;
 }
 
 @Injectable()
@@ -416,6 +441,8 @@ export class AdminService {
       data: {
         status: dto.status,
         resolution: dto.resolution,
+        priority: dto.priority,
+        assignedTo: dto.assignedTo,
         resolvedAt:
           dto.status === DisputeStatus.RESOLVED ||
           dto.status === DisputeStatus.CLOSED
@@ -511,7 +538,7 @@ export class AdminService {
           ],
         }
       : {};
-    const [data, total] = await Promise.all([
+    const [profiles, total] = await Promise.all([
       this.prisma.assessorProfile.findMany({
         where,
         include: { user: true },
@@ -521,6 +548,17 @@ export class AdminService {
       }),
       this.prisma.assessorProfile.count({ where }),
     ]);
+    const data = await Promise.all(
+      profiles.map(async (profile) => {
+        const activeEngagements = await this.prisma.dueDiligenceCase.count({
+          where: {
+            assignedAssessorId: profile.userId,
+            status: { in: [DueDiligenceStatus.ASSIGNED, DueDiligenceStatus.IN_PROGRESS] },
+          },
+        });
+        return { ...profile, activeEngagements };
+      }),
+    );
     return { data, meta: toPaginationMeta(page, limit, total) };
   }
 
@@ -539,10 +577,16 @@ export class AdminService {
       include: { user: true },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
-    await this.prisma.user.update({
-      where: { id: assessor.userId },
-      data: { kycStatus: KycStatus.VERIFIED },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: assessor.userId },
+        data: { kycStatus: KycStatus.VERIFIED },
+      }),
+      this.prisma.assessorProfile.update({
+        where: { id },
+        data: { accreditationStatus: AssessorAccreditationStatus.ACCREDITED },
+      }),
+    ]);
     return this.findAssessorById(id);
   }
 
@@ -552,10 +596,16 @@ export class AdminService {
       include: { user: true },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
-    await this.prisma.user.update({
-      where: { id: assessor.userId },
-      data: { status: UserStatus.SUSPENDED },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: assessor.userId },
+        data: { status: UserStatus.SUSPENDED },
+      }),
+      this.prisma.assessorProfile.update({
+        where: { id },
+        data: { accreditationStatus: AssessorAccreditationStatus.SUSPENDED },
+      }),
+    ]);
     return this.findAssessorById(id);
   }
 
@@ -639,36 +689,130 @@ export class AdminService {
         investorProfile: true,
         entrepreneurProfile: true,
         assessorProfile: true,
+        kycApplications: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return users.map((u) => {
-      let company: string | null = null;
-      if (u.entrepreneurProfile) {
-        company = u.entrepreneurProfile.companyName;
-      } else if (u.assessorProfile) {
-        company = u.assessorProfile.organizationName;
-      }
-      return {
-        id: u.id,
-        name: `${u.firstName} ${u.lastName}`.trim(),
-        email: u.email,
-        status: u.status,
-        kycStatus: u.kycStatus,
-        country: u.countryCode,
-        company,
-        documents:
-          u.preferences &&
-          typeof u.preferences === "object" &&
-          !Array.isArray(u.preferences) &&
-          "kycDocuments" in u.preferences
-            ? (u.preferences as Record<string, unknown>).kycDocuments
-            : null,
-        registeredDate: u.createdAt,
-        lastActive: u.lastLoginAt,
-      };
-    });
+    return Promise.all(
+      users.map(async (u) => {
+        let company: string | null = null;
+        if (u.entrepreneurProfile) {
+          company = u.entrepreneurProfile.companyName;
+        } else if (u.assessorProfile) {
+          company = u.assessorProfile.organizationName;
+        }
+
+        const latestKyc = u.kycApplications[0];
+        const alerts = await this.prisma.complianceAlert.findMany({
+          where: { entityId: u.id, entityType: "user" },
+          take: 10,
+        });
+        const riskFlags = alerts
+          .filter((a) => a.severity === ComplianceAlertSeverity.HIGH || a.severity === ComplianceAlertSeverity.CRITICAL)
+          .map((a) => ({ type: a.type, severity: a.severity, title: a.title }));
+
+        const submittedData = latestKyc?.submittedData;
+        const documentsReceived =
+          submittedData &&
+          typeof submittedData === "object" &&
+          !Array.isArray(submittedData) &&
+          "documents" in submittedData
+            ? (submittedData as Record<string, unknown>).documents
+            : [];
+
+        const priority =
+          riskFlags.length > 2
+            ? "critical"
+            : riskFlags.length > 0
+              ? "high"
+              : u.riskLevel === RiskRating.HIGH || u.riskLevel === RiskRating.CRITICAL
+                ? "high"
+                : "medium";
+
+        return {
+          id: u.id,
+          userName: `${u.firstName} ${u.lastName}`.trim(),
+          userRole: u.investorProfile ? "investor" : u.entrepreneurProfile ? "entrepreneur" : u.assessorProfile ? "provider" : "unknown",
+          email: u.email,
+          status: u.status,
+          kycStatus: u.kycStatus,
+          jurisdiction: u.countryCode,
+          company,
+          priority,
+          assignedTo: alerts.find((a) => a.assignedTo)?.assignedTo ?? null,
+          submittedDate: latestKyc?.createdAt ?? u.createdAt,
+          documentsReceived: Array.isArray(documentsReceived) ? documentsReceived.length : 0,
+          documentsRequired: 5,
+          riskFlags,
+          notes: latestKyc?.rejectionReason ?? null,
+          registeredDate: u.createdAt,
+          lastActive: u.lastLoginAt,
+        };
+      }),
+    );
+  }
+
+  async stressTest(
+    user: AuthenticatedUser,
+    dto: StressTestScenarioDto,
+  ): Promise<Record<string, unknown>> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user) ? {} : { tenantId: user.tenantId };
+    const [projects, investments] = await Promise.all([
+      this.prisma.project.findMany({
+        where: { ...tenantWhere, deletedAt: null },
+        include: { investments: true, deals: true },
+      }),
+      this.prisma.investment.findMany({
+        where: { ...tenantWhere, status: { not: "CANCELLED" as any } },
+      }),
+    ]);
+
+    const totalPortfolioValue = investments.reduce(
+      (sum, inv) => sum + inv.amount.toNumber(),
+      0,
+    );
+
+    const scenarioMultiplier = 1 - (dto.marketDeclinePercent ?? 0) / 100;
+    const stressedPortfolioValue = totalPortfolioValue * scenarioMultiplier;
+    const defaultRate = Math.min(
+      ((dto.defaultRateShock ?? 0) + (dto.interestRateShock ?? 0) * 0.5) / 100,
+      1,
+    );
+    const estimatedLosses = stressedPortfolioValue * defaultRate;
+    const recoveryRate = 0.4;
+    const navImpact = estimatedLosses * (1 - recoveryRate);
+
+    const sectorBreakdown = projects.reduce((acc, project) => {
+      const sector = project.sector;
+      const projectInvestments = project.investments.reduce(
+        (sum, inv) => sum + inv.amount.toNumber(),
+        0,
+      );
+      if (!acc[sector]) acc[sector] = 0;
+      acc[sector] += projectInvestments * scenarioMultiplier;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      scenario: dto.name ?? "Custom Stress Test",
+      parameters: {
+        interestRateShock: dto.interestRateShock ?? 0,
+        defaultRateShock: dto.defaultRateShock ?? 0,
+        marketDeclinePercent: dto.marketDeclinePercent ?? 0,
+      },
+      results: {
+        totalPortfolioValue,
+        stressedPortfolioValue,
+        defaultRate: defaultRate * 100,
+        estimatedLosses,
+        recoveryRate: recoveryRate * 100,
+        navImpact,
+      },
+      sectorBreakdown,
+      projectCount: projects.length,
+      investmentCount: investments.length,
+    };
   }
 
   // ============= Regulatory Reports =============
@@ -1071,6 +1215,15 @@ class AdminController {
   @Get("risk/stats")
   getRiskStats(): Promise<Record<string, unknown>> {
     return this.adminService.getRiskStats();
+  }
+
+  @Post("risk/stress-test")
+  @HttpCode(HttpStatus.OK)
+  stressTest(
+    @Body() dto: StressTestScenarioDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.stressTest(user, dto);
   }
 
   @Get("disputes")
