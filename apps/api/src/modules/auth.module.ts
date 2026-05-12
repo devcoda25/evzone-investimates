@@ -49,6 +49,8 @@ interface UserSummary {
   tenantId: string;
   status: UserStatus;
   kycStatus: KycStatus;
+  department: string | null;
+  permissions: string[];
 }
 
 interface AuthTokenResponse {
@@ -531,6 +533,8 @@ class AuthService {
       lastName: string;
       status: UserStatus;
       kycStatus: KycStatus;
+      department: string | null;
+      permissions: string[];
     },
     tenantId: string,
     role: PlatformRole,
@@ -544,6 +548,8 @@ class AuthService {
       tenantId,
       status: user.status,
       kycStatus: user.kycStatus,
+      department: user.department,
+      permissions: user.permissions,
     };
   }
 

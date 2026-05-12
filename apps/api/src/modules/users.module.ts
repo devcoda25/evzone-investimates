@@ -49,6 +49,8 @@ interface UserResponse {
   country: string | null;
   city: string | null;
   bio: string | null;
+  department: string | null;
+  permissions: string[];
   riskLevel: string | null;
   preferences: Prisma.JsonValue | null;
   lastLoginAt: Date | null;
@@ -131,6 +133,14 @@ class UpdateProfileDto {
   @IsOptional()
   @IsString()
   city?: string;
+
+  @IsOptional()
+  @IsString()
+  department?: string;
+
+  @IsOptional()
+  @IsString({ each: true })
+  permissions?: string[];
 
   @IsOptional()
   preferences?: Prisma.InputJsonValue;
@@ -402,6 +412,8 @@ class UsersService {
         bio: dto.bio,
         countryCode: dto.countryCode,
         city: dto.city,
+        department: dto.department,
+        permissions: dto.permissions,
         preferences: dto.preferences,
       },
       include: {
@@ -784,6 +796,8 @@ class UsersService {
       country: user.countryCode,
       city: user.city,
       bio: user.bio,
+      department: user.department,
+      permissions: user.permissions,
       riskLevel: user.riskLevel,
       preferences: user.preferences,
       lastLoginAt: user.lastLoginAt,

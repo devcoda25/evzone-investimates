@@ -376,6 +376,8 @@ model User {
   countryCode     String?
   city            String?
   bio             String?
+  department      String?
+  permissions     String[]         @default([])
   riskLevel       RiskRating?
   preferences     Json?
   lastLoginAt     DateTime?
