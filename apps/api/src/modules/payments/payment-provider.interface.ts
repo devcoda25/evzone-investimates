@@ -19,7 +19,7 @@ export interface CreateCollectionIntentInput {
     name?: string;
     country?: string;
   };
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   redirectUrl?: string;
 }
 

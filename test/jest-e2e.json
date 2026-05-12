@@ -1,0 +1,21 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@evzone/common$": "<rootDir>/libs/common/src",
+    "^@evzone/config$": "<rootDir>/libs/config/src",
+    "^@evzone/database$": "<rootDir>/libs/database/src",
+    "^@evzone/auth$": "<rootDir>/libs/auth/src",
+    "^@evzone/permissions$": "<rootDir>/libs/permissions/src",
+    "^@evzone/events$": "<rootDir>/libs/events/src",
+    "^@evzone/redis$": "<rootDir>/libs/redis/src",
+    "^@evzone/storage$": "<rootDir>/libs/storage/src",
+    "^@evzone/audit$": "<rootDir>/libs/audit/src",
+    "^@evzone/notifications$": "<rootDir>/libs/notifications/src"
+  }
+}

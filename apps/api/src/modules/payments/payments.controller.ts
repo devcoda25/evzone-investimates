@@ -9,6 +9,7 @@ import {
   Query,
   BadRequestException,
   Logger,
+  ParseEnumPipe,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -18,7 +19,7 @@ import {
 } from "@nestjs/swagger";
 import { AuthenticatedUser, CurrentUser, Roles } from "@evzone/common";
 import { JwtAuthGuard, RolesGuard } from "@evzone/auth";
-import { PaymentProvider, PlatformRole } from "@prisma/client";
+import { PaymentProvider, PaymentStatus, PlatformRole } from "@prisma/client";
 import {
   PaymentIntentsService,
   PayoutsService,
@@ -90,7 +91,7 @@ export class PaymentsController {
       ...dto,
       tenantId: user.tenantId,
       userId: user.id,
-      purpose: dto.purpose as any,
+      purpose: dto.purpose,
     });
   }
 
@@ -121,10 +122,10 @@ export class PaymentsController {
   @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
   @ApiOperation({ summary: "List payouts" })
   async listPayouts(
-    @Query("status") status: string | undefined,
+    @Query("status", new ParseEnumPipe(PaymentStatus, { optional: true })) status: PaymentStatus | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
-    return this.payoutsService.findPayouts(user.tenantId, status as any);
+    return this.payoutsService.findPayouts(user.tenantId, status);
   }
 
   @Get("schedule")

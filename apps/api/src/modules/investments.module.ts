@@ -493,7 +493,14 @@ export class InvestmentsService {
   }
 
   async confirm(id: string, user: AuthenticatedUser): Promise<unknown> {
-    const investment = await this.prisma.investment.update({
+    const investment = await this.prisma.investment.findUnique({
+      where: { id },
+      include: { project: true, investor: true },
+    });
+    if (!investment) throw new NotFoundException("Investment not found");
+    this.permissions.assertTenantAccess(user, investment.tenantId);
+    this.permissions.assertOwnerOrAdmin(user, investment.project.ownerUserId);
+    const updated = await this.prisma.investment.update({
       where: { id },
       data: { status: InvestmentStatus.CONFIRMED, confirmedAt: new Date() },
       include: { project: true, investor: true },
@@ -503,38 +510,38 @@ export class InvestmentsService {
       data: { status: TransactionStatus.COMPLETED, processedAt: new Date() },
     });
     await this.audit.record({
-      tenantId: investment.tenantId,
+      tenantId: updated.tenantId,
       userId: user.id,
       action: "investment.confirmed",
       entityType: "investment",
       entityId: id,
-      metadata: { amount: investment.amount.toString(), currency: investment.currency },
+      metadata: { amount: updated.amount.toString(), currency: updated.currency },
     });
     await this.outbox.create(this.prisma as any, {
-      tenantId: investment.tenantId,
+      tenantId: updated.tenantId,
       topic: "investment.confirmed",
       eventType: "investment.confirmed",
       aggregateType: "investment",
       aggregateId: id,
-      payload: { investmentId: id, amount: investment.amount.toString() },
+      payload: { investmentId: id, amount: updated.amount.toString() },
     });
     // Emit ledger.transaction_posted for the confirmed investment
     await this.outbox.create(this.prisma as any, {
-      tenantId: investment.tenantId,
+      tenantId: updated.tenantId,
       topic: "ledger.transaction_posted",
       eventType: "ledger.transaction_posted",
       aggregateType: "ledger_entry",
       aggregateId: id,
       payload: {
         investmentId: id,
-        projectId: investment.projectId,
-        investorUserId: investment.investorUserId,
-        amount: investment.amount.toString(),
-        currency: investment.currency,
+        projectId: updated.projectId,
+        investorUserId: updated.investorUserId,
+        amount: updated.amount.toString(),
+        currency: updated.currency,
         type: "INVESTMENT_CONFIRMED",
       },
     });
-    return this.toInvestmentResponse(investment);
+    return this.toInvestmentResponse(updated);
   }
 
   async runComplianceCheck(

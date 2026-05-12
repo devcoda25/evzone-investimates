@@ -339,6 +339,80 @@
       "nx/target-defaults"
     ]
   },
+  "apps/worker-payments": {
+    "root": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "name": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.executor": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.outputs": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.outputPath": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.main": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.tsConfig": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.options.assets": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.executor": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.options": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.options.buildTarget": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.serve.options.runBuildTargetOutput": [
+      "apps/worker-payments/project.json",
+      "nx/core/project-json"
+    ],
+    "targets.build.cache": [
+      "nx.json",
+      "nx/target-defaults"
+    ],
+    "targets.build.parallelism": [
+      "nx.json",
+      "nx/target-defaults"
+    ]
+  },
   "apps/worker-webhooks": {
     "root": [
       "apps/worker-webhooks/project.json",

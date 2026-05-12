@@ -38,6 +38,30 @@ export class KafkaPublisherService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async healthCheck(): Promise<{ status: string; latencyMs: number }> {
+    const start = Date.now();
+    const brokers = this.config.get<string[]>("kafka.brokers") ?? [
+      "localhost:9092",
+    ];
+    const clientId =
+      this.config.get<string>("kafka.clientId") ?? "evzone-platform";
+    const sasl = this.buildSaslOptions();
+    const kafka = new Kafka({
+      clientId,
+      brokers,
+      ssl: this.config.get<boolean>("kafka.ssl") ?? false,
+      sasl,
+    });
+    const admin = kafka.admin();
+    await admin.connect();
+    try {
+      await admin.listTopics();
+      return { status: "ok", latencyMs: Date.now() - start };
+    } finally {
+      await admin.disconnect();
+    }
+  }
+
   async publish(
     topic: string,
     key: string,

@@ -103,6 +103,12 @@ async function bootstrap(): Promise<void> {
     for (const project of projectsNeedingUpdate) {
       const lastSubmitted = project.impactReport?.submittedAt;
       if (lastSubmitted) {
+        if (!project.impactReport?.id) {
+          logger.warn(
+            `Skipping impact report reminder for project ${project.id}: missing impactReport.id`,
+          );
+          continue;
+        }
         const monthsSince = Math.floor(
           (Date.now() - lastSubmitted.getTime()) / (30 * 24 * 60 * 60 * 1000),
         );
@@ -114,7 +120,7 @@ async function bootstrap(): Promise<void> {
           topic: "impact.report_reminder",
           eventType: "impact.report_reminder",
           aggregateType: "impact_report",
-          aggregateId: project.impactReport?.id ?? "",
+          aggregateId: project.impactReport.id,
           payload: {
             projectId: project.id,
             monthsSinceLastReport: monthsSince,

@@ -145,7 +145,7 @@ class AiAdvisorService {
     };
   }
 
-  async getInsights(_user: AuthenticatedUser): Promise<InsightResponse[]> {
+  getInsights(_user: AuthenticatedUser): InsightResponse[] {
     // In a real implementation, this would analyze the user's portfolio
     return [
       {
@@ -209,7 +209,7 @@ class AiAdvisorController {
 
   @Get("sessions")
   @ApiOperation({ summary: "List chat sessions for current user" })
-  getSessions(@CurrentUser() user: AuthenticatedUser) {
+  getSessions(@CurrentUser() user: AuthenticatedUser): Promise<Pick<ChatSessionResponse, "id" | "title" | "createdAt" | "updatedAt">[]> {
     return this.aiAdvisorService.getSessions(user);
   }
 
@@ -227,13 +227,13 @@ class AiAdvisorController {
   sendMessage(
     @Body() dto: ChatMessageDto,
     @CurrentUser() user: AuthenticatedUser,
-  ) {
+  ): Promise<{ userMessage: ChatMessageResponse; aiMessage: ChatMessageResponse; sessionId: string }> {
     return this.aiAdvisorService.sendMessage(dto, user);
   }
 
   @Get("insights")
   @ApiOperation({ summary: "Get AI-generated portfolio insights" })
-  getInsights(@CurrentUser() user: AuthenticatedUser): Promise<InsightResponse[]> {
+  getInsights(@CurrentUser() user: AuthenticatedUser): InsightResponse[] {
     return this.aiAdvisorService.getInsights(user);
   }
 }
