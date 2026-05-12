@@ -33,6 +33,7 @@ import {
   MediaPurpose,
   MediaStatus,
   MilestoneStatus,
+  NotificationType,
   PlatformRole,
   Prisma,
   ProjectStage,
@@ -105,6 +106,7 @@ interface ProjectResponse {
   statusChangedAt: Date | null;
   committeeVotes: Prisma.JsonValue | null;
   reviewerNotes: Prisma.JsonValue | null;
+  environmentalMetrics: Prisma.JsonValue | null;
   daysInStage: number | null;
   createdAt: Date;
   updatedAt: Date;
@@ -384,6 +386,19 @@ export interface ProjectDocumentResponse {
 class RequestRevisionDto {
   @IsString()
   notes!: string;
+}
+
+class ShareProjectDto {
+  @IsString()
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @IsOptional()
+  @IsString()
+  message?: string;
 }
 
 export interface MediaUploadIntentResponse extends SignedUploadIntent {
@@ -1276,6 +1291,7 @@ export class ProjectsService {
       statusChangedAt: project.statusChangedAt ?? null,
       committeeVotes: project.committeeVotes ?? null,
       reviewerNotes: project.reviewerNotes ?? null,
+      environmentalMetrics: project.environmentalMetrics ?? null,
       daysInStage: project.statusChangedAt
         ? Math.floor((Date.now() - project.statusChangedAt.getTime()) / (1000 * 60 * 60 * 24))
         : null,
@@ -1382,6 +1398,53 @@ export class ProjectsService {
         closesAt: d.closesAt,
       })),
     };
+  }
+
+  async shareProject(
+    id: string,
+    dto: ShareProjectDto,
+    user: AuthenticatedUser,
+  ): Promise<{ success: boolean; sharedWith: string }> {
+    const project = await this.getProjectForAccess(id, user);
+    this.permissions.assertOwnerOrAdmin(user, project.ownerUserId);
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
+    if (!targetUser)
+      throw new NotFoundException(`User with email ${dto.email} not found`);
+
+    await this.transactions.run(async (tx) => {
+      await tx.notification.create({
+        data: {
+          tenantId: user.tenantId,
+          userId: targetUser.id,
+          type: NotificationType.SYSTEM,
+          title: `Project shared: ${project.title}`,
+          message:
+            dto.message ??
+            `You have been invited to view "${project.title}" as a ${dto.role ?? "viewer"}.`,
+          data: {
+            projectId: project.id,
+            sharedBy: user.id,
+            role: dto.role ?? "viewer",
+          },
+        },
+      });
+
+      await this.audit.recordFromRequest(
+        { ip: "", headers: {}, user },
+        "project.shared",
+        "project",
+        id,
+        undefined,
+        { sharedWith: targetUser.email, role: dto.role ?? "viewer" },
+        undefined,
+        tx as any,
+      );
+    });
+
+    return { success: true, sharedWith: targetUser.email };
   }
 
   async getProjectAnalytics(
@@ -1627,6 +1690,16 @@ class ProjectsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ProjectResponse> {
     return this.projectsService.publish(id, user);
+  }
+
+  @Post(":id/share")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.ENTREPRENEUR)
+  shareProject(
+    @Param("id") id: string,
+    @Body() dto: ShareProjectDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ success: boolean; sharedWith: string }> {
+    return this.projectsService.shareProject(id, dto, user);
   }
 
   @Get(":id/gallery/:mediaId/signed-url")

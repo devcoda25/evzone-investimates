@@ -16,7 +16,7 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, IsISO8601 } from "class-validator";
 import {
   AssessorAccreditationStatus,
   ComplianceAlertSeverity,
@@ -30,6 +30,7 @@ import {
   MembershipStatus,
   PlatformRole,
   Prisma,
+  ProviderAuditStatus,
   RiskRating,
   TransactionStatus,
   UserStatus,
@@ -99,6 +100,36 @@ class ResolveDisputeDto {
   assignedTo?: string;
 }
 
+interface DisputeResponse {
+  id: string;
+  tenantId: string;
+  type: DisputeType;
+  status: DisputeStatus;
+  title: string;
+  description: string;
+  initiatorId: string;
+  entityType: string | null;
+  entityId: string | null;
+  evidence: Prisma.JsonValue | null;
+  communications: Prisma.JsonValue | null;
+  timeline: Prisma.JsonValue | null;
+  partyContacts: Prisma.JsonValue | null;
+  resolution: string | null;
+  resolvedAt: Date | null;
+  priority: string | null;
+  financialImpact: Prisma.Decimal | null;
+  assignedTo: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  initiator: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    avatar: string | null;
+  } | null;
+}
+
 class AuditLogFilterDto extends PaginationDto {
   @IsOptional()
   @IsString()
@@ -137,6 +168,57 @@ class RiskAssessmentDto {
   @IsOptional()
   @IsString()
   mitigationPlan?: string;
+}
+
+class UpdateAssessorTierDto {
+  @IsString()
+  tier!: string;
+}
+
+class ScheduleAuditDto {
+  @IsISO8601()
+  scheduledDate!: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+class UpdateAuditDto {
+  @IsOptional()
+  @IsEnum(ProviderAuditStatus)
+  status?: ProviderAuditStatus;
+
+  @IsOptional()
+  @IsISO8601()
+  completedDate?: string;
+
+  @IsOptional()
+  @IsString()
+  auditorName?: string;
+
+  @IsOptional()
+  @IsString()
+  findings?: string;
+
+  @IsOptional()
+  @IsInt()
+  score?: number;
+
+  @IsOptional()
+  @IsString()
+  recommendations?: string;
+}
+
+class AssignKycCaseDto {
+  @IsString()
+  assignedTo!: string;
+}
+
+class EscalateKycCaseDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 class StressTestScenarioDto {
@@ -251,6 +333,32 @@ export class AdminService {
       activeAssessors,
       pendingKyc,
     };
+  }
+
+  async getDashboardCharts(
+    user: AuthenticatedUser,
+  ): Promise<{ month: string; completed: number; flagged: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+    const transactions = await this.prisma.transaction.findMany({
+      where: tenantWhere,
+      select: { createdAt: true, status: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const monthMap = new Map<string, { completed: number; flagged: number }>();
+    for (const tx of transactions) {
+      const month = tx.createdAt.toLocaleString('en-US', { month: 'short' });
+      const entry = monthMap.get(month) ?? { completed: 0, flagged: 0 };
+      if (tx.status === TransactionStatus.COMPLETED) entry.completed++;
+      if (tx.status === TransactionStatus.FLAGGED) entry.flagged++;
+      monthMap.set(month, entry);
+    }
+    return Array.from(monthMap.entries()).map(([month, counts]) => ({
+      month,
+      completed: counts.completed,
+      flagged: counts.flagged,
+    }));
   }
 
   private async getFlaggedTransactionsCount(user: AuthenticatedUser): Promise<number> {
@@ -428,13 +536,13 @@ export class AdminService {
     return { data, meta: toPaginationMeta(page, limit, total) };
   }
 
-  async findDisputeById(id: string): Promise<unknown> {
+  async findDisputeById(id: string): Promise<DisputeResponse> {
     const dispute = await this.prisma.dispute.findUnique({
       where: { id },
-      include: { initiator: true },
+      include: { initiator: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } },
     });
     if (!dispute) throw new NotFoundException("Dispute not found");
-    return dispute;
+    return dispute as DisputeResponse;
   }
 
   async updateDispute(id: string, dto: ResolveDisputeDto): Promise<unknown> {
@@ -590,6 +698,65 @@ export class AdminService {
       }),
     ]);
     return this.findAssessorById(id);
+  }
+
+  async updateAssessorTier(id: string, dto: UpdateAssessorTierDto): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    await this.prisma.assessorProfile.update({
+      where: { id },
+      data: { tier: dto.tier },
+    });
+    return this.findAssessorById(id);
+  }
+
+  async scheduleAudit(assessorId: string, dto: ScheduleAuditDto): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id: assessorId },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    const audit = await this.prisma.providerAudit.create({
+      data: {
+        assessorId,
+        scheduledDate: new Date(dto.scheduledDate),
+        findings: dto.notes,
+      },
+    });
+    return audit;
+  }
+
+  async getProviderAudits(assessorId: string): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id: assessorId },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    const audits = await this.prisma.providerAudit.findMany({
+      where: { assessorId },
+      orderBy: { scheduledDate: 'desc' },
+    });
+    return audits;
+  }
+
+  async updateAudit(id: string, dto: UpdateAuditDto): Promise<unknown> {
+    const audit = await this.prisma.providerAudit.findUnique({
+      where: { id },
+    });
+    if (!audit) throw new NotFoundException("Audit not found");
+    const updated = await this.prisma.providerAudit.update({
+      where: { id },
+      data: {
+        ...(dto.status && { status: dto.status }),
+        ...(dto.completedDate && { completedDate: new Date(dto.completedDate) }),
+        ...(dto.auditorName !== undefined && { auditorName: dto.auditorName }),
+        ...(dto.findings !== undefined && { findings: dto.findings }),
+        ...(dto.score !== undefined && { score: dto.score }),
+        ...(dto.recommendations !== undefined && { recommendations: dto.recommendations }),
+      },
+    });
+    return updated;
   }
 
   async suspendAssessor(id: string): Promise<unknown> {
@@ -753,6 +920,67 @@ export class AdminService {
         };
       }),
     );
+  }
+
+  async assignKycCase(
+    authUser: AuthenticatedUser,
+    userId: string,
+    dto: AssignKycCaseDto,
+  ): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const existingAlert = await this.prisma.complianceAlert.findFirst({
+      where: { entityId: userId, entityType: "USER" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existingAlert) {
+      await this.prisma.complianceAlert.update({
+        where: { id: existingAlert.id },
+        data: { assignedTo: dto.assignedTo },
+      });
+    } else {
+      await this.prisma.complianceAlert.create({
+        data: {
+          tenantId: authUser.tenantId,
+          type: ComplianceAlertType.KYC_ISSUE,
+          severity: ComplianceAlertSeverity.MEDIUM,
+          status: ComplianceAlertStatus.OPEN,
+          entityType: "USER",
+          entityId: userId,
+          title: "KYC Case Assignment",
+          description: "KYC case assigned for manual review",
+          assignedTo: dto.assignedTo,
+        },
+      });
+    }
+
+    return { success: true, userId, assignedTo: dto.assignedTo };
+  }
+
+  async escalateKycCase(
+    authUser: AuthenticatedUser,
+    userId: string,
+    dto: EscalateKycCaseDto,
+  ): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    await this.prisma.complianceAlert.create({
+      data: {
+        tenantId: authUser.tenantId,
+        type: ComplianceAlertType.KYC_ISSUE,
+        severity: ComplianceAlertSeverity.CRITICAL,
+        status: ComplianceAlertStatus.OPEN,
+        entityType: "USER",
+        entityId: userId,
+        title: "KYC Case Escalated",
+        description: dto.reason || "KYC case manually escalated by compliance officer",
+      },
+    });
+
+    return { success: true, userId, escalated: true };
   }
 
   async stressTest(
@@ -1308,6 +1536,13 @@ class AdminController {
     return this.adminService.getDashboard(user);
   }
 
+  @Get("dashboard/charts")
+  getDashboardCharts(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ month: string; completed: number; flagged: number }[]> {
+    return this.adminService.getDashboardCharts(user);
+  }
+
   @Get("risk/projects")
   findRiskProjects(): Promise<unknown[]> {
     return this.adminService.findRiskProjects();
@@ -1400,6 +1635,39 @@ class AdminController {
     return this.adminService.verifyAssessor(id);
   }
 
+  @Patch("assessors/:id/tier")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateAssessorTier(
+    @Param("id") id: string,
+    @Body() dto: UpdateAssessorTierDto,
+  ): Promise<unknown> {
+    return this.adminService.updateAssessorTier(id, dto);
+  }
+
+  @Post("assessors/:id/audits")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  scheduleAudit(
+    @Param("id") id: string,
+    @Body() dto: ScheduleAuditDto,
+  ): Promise<unknown> {
+    return this.adminService.scheduleAudit(id, dto);
+  }
+
+  @Get("assessors/:id/audits")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getProviderAudits(@Param("id") id: string): Promise<unknown> {
+    return this.adminService.getProviderAudits(id);
+  }
+
+  @Patch("audits/:id")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateAudit(
+    @Param("id") id: string,
+    @Body() dto: UpdateAuditDto,
+  ): Promise<unknown> {
+    return this.adminService.updateAudit(id, dto);
+  }
+
   @Post("assessors/:id/suspend")
   suspendAssessor(@Param("id") id: string): Promise<unknown> {
     return this.adminService.suspendAssessor(id);
@@ -1433,6 +1701,26 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
     return this.adminService.findKycCases(user, status);
+  }
+
+  @Patch("kyc-cases/:id/assign")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.COMPLIANCE_OFFICER)
+  assignKycCase(
+    @Param("id") id: string,
+    @Body() dto: AssignKycCaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.adminService.assignKycCase(user, id, dto);
+  }
+
+  @Patch("kyc-cases/:id/escalate")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.COMPLIANCE_OFFICER)
+  escalateKycCase(
+    @Param("id") id: string,
+    @Body() dto: EscalateKycCaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.adminService.escalateKycCase(user, id, dto);
   }
 
   @Get("export/data")
