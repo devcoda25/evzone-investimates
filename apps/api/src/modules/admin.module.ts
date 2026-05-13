@@ -510,6 +510,306 @@ export class AdminService {
     };
   }
 
+  async getRiskFactors(
+    user: AuthenticatedUser,
+  ): Promise<{ factor: string; impact: number; affected: number; trend: "up" | "down" | "stable" }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const [alerts, projects, transactions] = await Promise.all([
+      this.prisma.complianceAlert.findMany({
+        where: {
+          ...tenantWhere,
+          status: ComplianceAlertStatus.OPEN,
+          type: {
+            in: [
+              ComplianceAlertType.REGULATORY_CHANGE,
+              ComplianceAlertType.KYC_ISSUE,
+              ComplianceAlertType.AML_FLAG,
+            ],
+          },
+        },
+        select: { type: true, severity: true },
+      }),
+      this.prisma.project.findMany({
+        where: {
+          ...tenantWhere,
+          riskRating: { in: [RiskRating.HIGH, RiskRating.CRITICAL] },
+          deletedAt: null,
+        },
+        select: { riskRating: true },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          ...tenantWhere,
+          status: TransactionStatus.FLAGGED,
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    const alertCounts = new Map<string, number>();
+    for (const alert of alerts) {
+      alertCounts.set(alert.type, (alertCounts.get(alert.type) || 0) + 1);
+    }
+
+    const highProjects = projects.filter(
+      (p) => p.riskRating === RiskRating.HIGH,
+    ).length;
+    const criticalProjects = projects.filter(
+      (p) => p.riskRating === RiskRating.CRITICAL,
+    ).length;
+
+    const factors: {
+      factor: string;
+      impact: number;
+      affected: number;
+      trend: "up" | "down" | "stable";
+    }[] = [];
+
+    const regCount = alertCounts.get(ComplianceAlertType.REGULATORY_CHANGE) || 0;
+    if (regCount > 0) {
+      factors.push({
+        factor: "Regulatory Changes",
+        impact: Math.min(100, 60 + regCount * 5),
+        affected: regCount,
+        trend: "stable",
+      });
+    }
+
+    const kycCount = alertCounts.get(ComplianceAlertType.KYC_ISSUE) || 0;
+    if (kycCount > 0) {
+      factors.push({
+        factor: "KYC Issues",
+        impact: Math.min(100, 55 + kycCount * 5),
+        affected: kycCount,
+        trend: "stable",
+      });
+    }
+
+    const amlCount = alertCounts.get(ComplianceAlertType.AML_FLAG) || 0;
+    if (amlCount > 0) {
+      factors.push({
+        factor: "Transaction Anomalies",
+        impact: Math.min(100, 65 + amlCount * 5),
+        affected: amlCount,
+        trend: "stable",
+      });
+    }
+
+    if (criticalProjects > 0) {
+      factors.push({
+        factor: "Critical Risk Projects",
+        impact: Math.min(100, 85 + criticalProjects * 3),
+        affected: criticalProjects,
+        trend: "stable",
+      });
+    }
+
+    if (highProjects > 0) {
+      factors.push({
+        factor: "High Risk Projects",
+        impact: Math.min(100, 70 + highProjects * 2),
+        affected: highProjects,
+        trend: "stable",
+      });
+    }
+
+    if (transactions.length > 0) {
+      factors.push({
+        factor: "Flagged Transactions",
+        impact: Math.min(100, 50 + transactions.length * 3),
+        affected: transactions.length,
+        trend: "stable",
+      });
+    }
+
+    return factors.sort((a, b) => b.impact - a.impact).slice(0, 6);
+  }
+
+  async getRiskChanges(
+    user: AuthenticatedUser,
+  ): Promise<
+    {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[]
+  > {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const auditLogs = await this.prisma.auditLog.findMany({
+      where: {
+        ...tenantWhere,
+        entityType: "Project",
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    const changes: {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[] = [];
+    const projectIds = new Set<string>();
+
+    for (const log of auditLogs) {
+      const oldValues =
+        (log.oldValues as Record<string, unknown> | null) || {};
+      const newValues =
+        (log.newValues as Record<string, unknown> | null) || {};
+      if (
+        oldValues.riskRating !== undefined ||
+        newValues.riskRating !== undefined
+      ) {
+        projectIds.add(log.entityId);
+      }
+    }
+
+    if (projectIds.size > 0) {
+      const projects = await this.prisma.project.findMany({
+        where: { id: { in: Array.from(projectIds) } },
+        select: { id: true, title: true },
+      });
+      const projectMap = new Map(projects.map((p) => [p.id, p.title]));
+
+      for (const log of auditLogs) {
+        const oldValues =
+          (log.oldValues as Record<string, unknown> | null) || {};
+        const newValues =
+          (log.newValues as Record<string, unknown> | null) || {};
+        if (
+          oldValues.riskRating !== undefined ||
+          newValues.riskRating !== undefined
+        ) {
+          changes.push({
+            projectId: log.entityId,
+            projectName: projectMap.get(log.entityId) || "Unknown Project",
+            changedAt: log.createdAt.toISOString(),
+            fromRating: String(oldValues.riskRating ?? "N/A"),
+            toRating: String(newValues.riskRating ?? "N/A"),
+            reason:
+              ((log.metadata as Record<string, unknown> | null)
+                ?.reason as string) || "Risk assessment updated",
+          });
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      const fallbackProjects = await this.prisma.project.findMany({
+        where: {
+          ...tenantWhere,
+          deletedAt: null,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: {
+          id: true,
+          title: true,
+          riskRating: true,
+          status: true,
+          updatedAt: true,
+          createdAt: true,
+        },
+      });
+
+      const recentProjects = fallbackProjects.filter(
+        (p) => p.updatedAt.getTime() - p.createdAt.getTime() > 60000,
+      );
+
+      return recentProjects.map((p) => ({
+        projectId: p.id,
+        projectName: p.title,
+        changedAt: p.updatedAt.toISOString(),
+        fromRating: p.riskRating ?? "N/A",
+        toRating: p.riskRating ?? "N/A",
+        reason: `Project ${p.status.toLowerCase()} updated`,
+      }));
+    }
+
+    return changes.slice(0, 10);
+  }
+
+  async getRiskInvestors(
+    user: AuthenticatedUser,
+  ): Promise<{ investorId: string; name: string; commitment: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const grouped = await this.prisma.investment.groupBy({
+      by: ["investorUserId"],
+      where: tenantWhere,
+      _sum: { amount: true },
+    });
+
+    const investorIds = grouped.map((g) => g.investorUserId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: investorIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const userMap = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+
+    const result = grouped.map((g) => ({
+      investorId: g.investorUserId,
+      name: userMap.get(g.investorUserId) || "Unknown",
+      commitment: g._sum.amount?.toNumber() ?? 0,
+    }));
+
+    return result
+      .sort((a, b) => b.commitment - a.commitment)
+      .slice(0, 8);
+  }
+
+  async getRiskCounterparties(
+    user: AuthenticatedUser,
+  ): Promise<{ name: string; limit: number; exposure: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const grouped = await this.prisma.investment.groupBy({
+      by: ["investorUserId"],
+      where: tenantWhere,
+      _sum: { amount: true },
+    });
+
+    const investorIds = grouped.map((g) => g.investorUserId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: investorIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const userMap = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+
+    const result = grouped.map((g) => {
+      const exposure = g._sum.amount?.toNumber() ?? 0;
+      return {
+        name: userMap.get(g.investorUserId) || "Unknown",
+        limit: Math.max(5000000, exposure * 2),
+        exposure,
+      };
+    });
+
+    return result
+      .sort((a, b) => b.exposure - a.exposure)
+      .slice(0, 6);
+  }
+
   async findDisputes(
     filter: DisputeFilterDto,
     user: AuthenticatedUser,
@@ -1568,6 +1868,45 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Record<string, unknown>> {
     return this.adminService.stressTest(user, dto);
+  }
+
+  @Get("risk/factors")
+  getRiskFactors(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<
+    { factor: string; impact: number; affected: number; trend: "up" | "down" | "stable" }[]
+  > {
+    return this.adminService.getRiskFactors(user);
+  }
+
+  @Get("risk/changes")
+  getRiskChanges(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<
+    {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[]
+  > {
+    return this.adminService.getRiskChanges(user);
+  }
+
+  @Get("risk/investors")
+  getRiskInvestors(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ investorId: string; name: string; commitment: number }[]> {
+    return this.adminService.getRiskInvestors(user);
+  }
+
+  @Get("risk/counterparties")
+  getRiskCounterparties(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ name: string; limit: number; exposure: number }[]> {
+    return this.adminService.getRiskCounterparties(user);
   }
 
   @Get("disputes")
