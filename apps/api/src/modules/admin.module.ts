@@ -345,6 +345,7 @@ export class AdminService {
       where: tenantWhere,
       select: { createdAt: true, status: true },
       orderBy: { createdAt: 'asc' },
+      take: 1000,
     });
     const monthMap = new Map<string, { completed: number; flagged: number }>();
     for (const tx of transactions) {
@@ -826,7 +827,17 @@ export class AdminService {
     const [data, total] = await Promise.all([
       this.prisma.dispute.findMany({
         where,
-        include: { initiator: true },
+        include: {
+          initiator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatar: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -951,31 +962,48 @@ export class AdminService {
     const [profiles, total] = await Promise.all([
       this.prisma.assessorProfile.findMany({
         where,
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              status: true,
+              kycStatus: true,
+              countryCode: true,
+              createdAt: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.assessorProfile.count({ where }),
     ]);
-    const data = await Promise.all(
-      profiles.map(async (profile) => {
-        const activeEngagements = await this.prisma.dueDiligenceCase.count({
-          where: {
-            assignedAssessorId: profile.userId,
-            status: { in: [DueDiligenceStatus.ASSIGNED, DueDiligenceStatus.IN_PROGRESS] },
-          },
-        });
-        return { ...profile, activeEngagements };
-      }),
-    );
-    return { data, meta: toPaginationMeta(page, limit, total) };
+    return { data: profiles, meta: toPaginationMeta(page, limit, total) };
   }
 
   async findAssessorById(id: string): Promise<unknown> {
     const assessor = await this.prisma.assessorProfile.findUnique({
       where: { id },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            kycStatus: true,
+            countryCode: true,
+            createdAt: true,
+          },
+        },
+      },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
     return assessor;
@@ -1161,65 +1189,75 @@ export class AdminService {
         kycApplications: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
+      take: 50,
     });
 
-    return Promise.all(
-      users.map(async (u) => {
-        let company: string | null = null;
-        if (u.entrepreneurProfile) {
-          company = u.entrepreneurProfile.companyName;
-        } else if (u.assessorProfile) {
-          company = u.assessorProfile.organizationName;
-        }
+    const userIds = users.map((u) => u.id);
+    const allAlerts = userIds.length > 0
+      ? await this.prisma.complianceAlert.findMany({
+          where: { entityId: { in: userIds }, entityType: "user" },
+        })
+      : [];
 
-        const latestKyc = u.kycApplications[0];
-        const alerts = await this.prisma.complianceAlert.findMany({
-          where: { entityId: u.id, entityType: "user" },
-          take: 10,
-        });
-        const riskFlags = alerts
-          .filter((a) => a.severity === ComplianceAlertSeverity.HIGH || a.severity === ComplianceAlertSeverity.CRITICAL)
-          .map((a) => ({ type: a.type, severity: a.severity, title: a.title }));
+    const alertsByUser = new Map<string, typeof allAlerts>();
+    for (const alert of allAlerts) {
+      const list = alertsByUser.get(alert.entityId) ?? [];
+      list.push(alert);
+      alertsByUser.set(alert.entityId, list);
+    }
 
-        const submittedData = latestKyc?.submittedData;
-        const documentsReceived =
-          submittedData &&
-          typeof submittedData === "object" &&
-          !Array.isArray(submittedData) &&
-          "documents" in submittedData
-            ? (submittedData as Record<string, unknown>).documents
-            : [];
+    return users.map((u) => {
+      let company: string | null = null;
+      if (u.entrepreneurProfile) {
+        company = u.entrepreneurProfile.companyName;
+      } else if (u.assessorProfile) {
+        company = u.assessorProfile.organizationName;
+      }
 
-        const priority =
-          riskFlags.length > 2
-            ? "critical"
-            : riskFlags.length > 0
+      const latestKyc = u.kycApplications[0];
+      const alerts = alertsByUser.get(u.id) ?? [];
+      const riskFlags = alerts
+        .filter((a) => a.severity === ComplianceAlertSeverity.HIGH || a.severity === ComplianceAlertSeverity.CRITICAL)
+        .map((a) => ({ type: a.type, severity: a.severity, title: a.title }));
+
+      const submittedData = latestKyc?.submittedData;
+      const documentsReceived =
+        submittedData &&
+        typeof submittedData === "object" &&
+        !Array.isArray(submittedData) &&
+        "documents" in submittedData
+          ? (submittedData as Record<string, unknown>).documents
+          : [];
+
+      const priority =
+        riskFlags.length > 2
+          ? "critical"
+          : riskFlags.length > 0
+            ? "high"
+            : u.riskLevel === RiskRating.HIGH || u.riskLevel === RiskRating.CRITICAL
               ? "high"
-              : u.riskLevel === RiskRating.HIGH || u.riskLevel === RiskRating.CRITICAL
-                ? "high"
-                : "medium";
+              : "medium";
 
-        return {
-          id: u.id,
-          userName: `${u.firstName} ${u.lastName}`.trim(),
-          userRole: u.investorProfile ? "investor" : u.entrepreneurProfile ? "entrepreneur" : u.assessorProfile ? "provider" : "unknown",
-          email: u.email,
-          status: u.status,
-          kycStatus: u.kycStatus,
-          jurisdiction: u.countryCode,
-          company,
-          priority,
-          assignedTo: alerts.find((a) => a.assignedTo)?.assignedTo ?? null,
-          submittedDate: latestKyc?.createdAt ?? u.createdAt,
-          documentsReceived: Array.isArray(documentsReceived) ? documentsReceived.length : 0,
-          documentsRequired: 5,
-          riskFlags,
-          notes: latestKyc?.rejectionReason ?? null,
-          registeredDate: u.createdAt,
-          lastActive: u.lastLoginAt,
-        };
-      }),
-    );
+      return {
+        id: u.id,
+        userName: `${u.firstName} ${u.lastName}`.trim(),
+        userRole: u.investorProfile ? "investor" : u.entrepreneurProfile ? "entrepreneur" : u.assessorProfile ? "provider" : "unknown",
+        email: u.email,
+        status: u.status,
+        kycStatus: u.kycStatus,
+        jurisdiction: u.countryCode,
+        company,
+        priority,
+        assignedTo: alerts.find((a) => a.assignedTo)?.assignedTo ?? null,
+        submittedDate: latestKyc?.createdAt ?? u.createdAt,
+        documentsReceived: Array.isArray(documentsReceived) ? documentsReceived.length : 0,
+        documentsRequired: 5,
+        riskFlags,
+        notes: latestKyc?.rejectionReason ?? null,
+        registeredDate: u.createdAt,
+        lastActive: u.lastLoginAt,
+      };
+    });
   }
 
   async assignKycCase(
@@ -1749,7 +1787,17 @@ export class AdminService {
      const [items, total] = await Promise.all([
        this.prisma.dispute.findMany({
          where,
-         include: { initiator: true },
+         include: {
+           initiator: {
+             select: {
+               id: true,
+               firstName: true,
+               lastName: true,
+               email: true,
+               avatar: true,
+             },
+           },
+         },
          orderBy: { createdAt: "desc" },
          skip: (page - 1) * limit,
          take: limit,
