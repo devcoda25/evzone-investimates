@@ -2,11 +2,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Injectable,
   Module,
+  Param,
   Post,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -47,6 +49,8 @@ interface UserSummary {
   tenantId: string;
   status: UserStatus;
   kycStatus: KycStatus;
+  department: string | null;
+  permissions: string[];
 }
 
 interface AuthTokenResponse {
@@ -126,6 +130,16 @@ class VerifyMfaDto {
   @MinLength(6)
   @MaxLength(6)
   code!: string;
+}
+
+class CreateApiKeyDto {
+  @IsString()
+  name!: string;
+}
+
+class RevokeSessionDto {
+  @IsString()
+  sessionId!: string;
 }
 
 @Injectable()
@@ -299,12 +313,17 @@ class AuthService {
   }
 
   async refresh(dto: RefreshDto): Promise<AuthTokenResponse> {
-    const payload = await this.jwt.verifyAsync<JwtRefreshPayload>(
-      dto.refreshToken,
-      {
-        secret: this.config.get<string>("jwt.refreshSecret"),
-      },
-    );
+    let payload: JwtRefreshPayload;
+    try {
+      payload = await this.jwt.verifyAsync<JwtRefreshPayload>(
+        dto.refreshToken,
+        {
+          secret: this.config.get<string>("jwt.refreshSecret"),
+        },
+      );
+    } catch {
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
     const tokenHash = this.hashToken(dto.refreshToken);
     const stored = await this.prisma.refreshToken.findFirst({
       where: {
@@ -514,6 +533,8 @@ class AuthService {
       lastName: string;
       status: UserStatus;
       kycStatus: KycStatus;
+      department: string | null;
+      permissions: string[];
     },
     tenantId: string,
     role: PlatformRole,
@@ -527,6 +548,8 @@ class AuthService {
       tenantId,
       status: user.status,
       kycStatus: user.kycStatus,
+      department: user.department,
+      permissions: user.permissions,
     };
   }
 
@@ -666,6 +689,66 @@ class AuthService {
     });
     return this.issueTokens(user.id, membership.tenantId, membership.role);
   }
+
+  async getSessions(userId: string): Promise<unknown[]> {
+    const tokens = await this.prisma.refreshToken.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+    });
+    return tokens.map((t) => ({
+      id: t.id,
+      device: t.userAgent ?? "Unknown device",
+      ip: t.ipAddress ?? "Unknown",
+      lastActive: t.createdAt.toISOString(),
+      expiresAt: t.expiresAt.toISOString(),
+    }));
+  }
+
+  async revokeSession(userId: string, sessionId: string): Promise<{ message: string }> {
+    const token = await this.prisma.refreshToken.findFirst({
+      where: { id: sessionId, userId },
+    });
+    if (!token) throw new BadRequestException("Session not found");
+    await this.prisma.refreshToken.update({
+      where: { id: sessionId },
+      data: { revokedAt: new Date() },
+    });
+    return { message: "Session revoked successfully" };
+  }
+
+  async createApiKey(userId: string, name: string): Promise<{ id: string; name: string; key: string }> {
+    const key = `evz_${randomBytes(32).toString("hex")}`;
+    const keyHash = this.hashToken(key);
+    const created = await this.prisma.apiKey.create({
+      data: { userId, name, keyHash },
+    });
+    return { id: created.id, name: created.name, key };
+  }
+
+  async listApiKeys(userId: string): Promise<unknown[]> {
+    const keys = await this.prisma.apiKey.findMany({
+      where: { userId, revokedAt: null },
+      orderBy: { createdAt: "desc" },
+    });
+    return keys.map((k) => ({
+      id: k.id,
+      name: k.name,
+      createdAt: k.createdAt.toISOString(),
+      lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+    }));
+  }
+
+  async revokeApiKey(userId: string, keyId: string): Promise<{ message: string }> {
+    const key = await this.prisma.apiKey.findFirst({
+      where: { id: keyId, userId },
+    });
+    if (!key) throw new BadRequestException("API key not found");
+    await this.prisma.apiKey.update({
+      where: { id: keyId },
+      data: { revokedAt: new Date() },
+    });
+    return { message: "API key revoked successfully" };
+  }
 }
 
 @ApiTags("Auth")
@@ -767,6 +850,48 @@ class AuthController {
   @HttpCode(HttpStatus.OK)
   verifyMfa(@Body() dto: VerifyMfaDto): Promise<AuthTokenResponse> {
     return this.authService.verifyMfa(dto);
+  }
+
+  @ApiBearerAuth()
+  @Get("sessions")
+  getSessions(@CurrentUser("id") userId: string): Promise<unknown[]> {
+    return this.authService.getSessions(userId);
+  }
+
+  @ApiBearerAuth()
+  @Post("sessions/:id/revoke")
+  @HttpCode(HttpStatus.OK)
+  revokeSession(
+    @CurrentUser("id") userId: string,
+    @Param("id") sessionId: string,
+  ): Promise<{ message: string }> {
+    return this.authService.revokeSession(userId, sessionId);
+  }
+
+  @ApiBearerAuth()
+  @Post("api-keys")
+  @HttpCode(HttpStatus.OK)
+  createApiKey(
+    @CurrentUser("id") userId: string,
+    @Body() dto: CreateApiKeyDto,
+  ): Promise<{ id: string; name: string; key: string }> {
+    return this.authService.createApiKey(userId, dto.name);
+  }
+
+  @ApiBearerAuth()
+  @Get("api-keys")
+  listApiKeys(@CurrentUser("id") userId: string): Promise<unknown[]> {
+    return this.authService.listApiKeys(userId);
+  }
+
+  @ApiBearerAuth()
+  @Delete("api-keys/:id")
+  @HttpCode(HttpStatus.OK)
+  revokeApiKey(
+    @CurrentUser("id") userId: string,
+    @Param("id") keyId: string,
+  ): Promise<{ message: string }> {
+    return this.authService.revokeApiKey(userId, keyId);
   }
 }
 

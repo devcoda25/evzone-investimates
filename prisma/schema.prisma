@@ -95,6 +95,20 @@ enum AssessorAvailability {
   ON_LEAVE
 }
 
+enum AssessorAccreditationStatus {
+  ACCREDITED
+  PENDING
+  SUSPENDED
+  UNDER_REVIEW
+}
+
+enum ProviderAuditStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 enum GreenSector {
   SOLAR
   WIND
@@ -345,6 +359,7 @@ model Tenant {
   type        TenantType   @default(ORGANIZATION)
   countryCode String?
   status      TenantStatus @default(ACTIVE)
+  settings    Json?
 
   users       UserTenantMembership[]
   projects    Project[]
@@ -368,6 +383,8 @@ model User {
   countryCode     String?
   city            String?
   bio             String?
+  department      String?
+  permissions     String[]         @default([])
   riskLevel       RiskRating?
   preferences     Json?
   lastLoginAt     DateTime?
@@ -380,6 +397,7 @@ model User {
   assessorProfile     AssessorProfile?
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  apiKeys             ApiKey[]
   ownedProjects       Project[]          @relation("ProjectOwner")
   investments         Investment[]       @relation("InvestorInvestments")
   notifications       Notification[]
@@ -485,12 +503,33 @@ model AssessorProfile {
   insuranceValid      Boolean              @default(false)
   tier                String               @default("Bronze")
   avgTurnaround       Int?
+  accreditationStatus AssessorAccreditationStatus @default(PENDING)
 
   user                User @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedCases       DueDiligenceCase[]   @relation("AssignedAssessor")
+  audits              ProviderAudit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ProviderAudit {
+  id              String               @id @default(uuid())
+  assessorId      String
+  scheduledDate   DateTime
+  completedDate   DateTime?
+  status          ProviderAuditStatus  @default(SCHEDULED)
+  auditorName     String?
+  findings        String?
+  score           Int?
+  recommendations String?
+
+  assessor        AssessorProfile @relation(fields: [assessorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([assessorId, status])
+  @@index([scheduledDate])
 }
 
 model RefreshToken {
@@ -522,6 +561,21 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@index([userId, expiresAt])
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  userId      String
+  name        String
+  keyHash     String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Project {
@@ -573,6 +627,12 @@ model Project {
   featuredOrder   Int?
   revisionNotes   String?
   revisionRequestedAt DateTime?
+  reviewerId      String?
+  environmentalScore Int?
+  statusChangedAt DateTime?
+  committeeVotes  Json?
+  reviewerNotes   Json?
+  environmentalMetrics Json?
 
   tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   owner           User   @relation("ProjectOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
@@ -1116,6 +1176,20 @@ model ComplianceAlert {
   @@index([severity])
 }
 
+model RegulatoryRule {
+  id                String   @id @default(uuid())
+  tenantId          String?
+  jurisdiction      String
+  ruleName          String
+  status            String   @default("Active")
+  applicableEntities String[] @default([])
+  automated         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([tenantId, status])
+}
+
 model ComplianceCase {
   id          String               @id @default(uuid())
   tenantId    String
@@ -1149,8 +1223,14 @@ model Dispute {
   entityType  String?
   entityId    String?
   evidence    Json?
+  communications Json?
+  timeline    Json?
+  partyContacts Json?
   resolution  String?
   resolvedAt  DateTime?
+  priority    String?   @default("medium")
+  financialImpact Decimal? @db.Decimal(18, 2)
+  assignedTo  String?
 
   initiator   User @relation(fields: [initiatorId], references: [id], onDelete: Restrict)
 
@@ -1173,6 +1253,7 @@ model AuditLog {
   metadata    Json?
   ipAddress   String?
   userAgent   String?
+  jurisdiction String?
 
   user        User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 

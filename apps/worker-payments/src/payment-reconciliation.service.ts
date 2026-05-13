@@ -5,6 +5,7 @@ import { AuditService } from "@evzone/audit";
 import { RedisService } from "@evzone/redis";
 import { KafkaConsumerService } from "@evzone/events";
 import { Prisma, TransactionStatus } from "@prisma/client";
+import { EachMessagePayload } from "kafkajs";
 
 @Injectable()
 export class PaymentReconciliationService implements OnModuleInit {
@@ -18,21 +19,28 @@ export class PaymentReconciliationService implements OnModuleInit {
     private readonly kafkaConsumer: KafkaConsumerService,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.consumePaymentEvents();
+    await this.kafkaConsumer.startConsuming();
   }
 
   private consumePaymentEvents(): void {
-    this.kafkaConsumer.consume("payment.confirmed", async (message) => {
-      const { paymentIntentId, providerReference, amount, currency } = JSON.parse(
-        message.value.toString(),
-      );
-      await this.reconcilePayment(paymentIntentId, providerReference, amount, currency);
+    this.kafkaConsumer.registerHandler({
+      topic: "payment.confirmed",
+      handle: async (payload: EachMessagePayload) => {
+        const { paymentIntentId, providerReference, amount, currency } = JSON.parse(
+          payload.message.value?.toString() ?? "{}",
+        );
+        await this.reconcilePayment(paymentIntentId, providerReference, amount, currency);
+      },
     });
 
-    this.kafkaConsumer.consume("payment.failed", async (message) => {
-      const { paymentIntentId, error } = JSON.parse(message.value.toString());
-      await this.handleFailedPayment(paymentIntentId, error);
+    this.kafkaConsumer.registerHandler({
+      topic: "payment.failed",
+      handle: async (payload: EachMessagePayload) => {
+        const { paymentIntentId, error } = JSON.parse(payload.message.value?.toString() ?? "{}");
+        await this.handleFailedPayment(paymentIntentId, error);
+      },
     });
   }
 

@@ -304,6 +304,18 @@ class ComplianceService {
   async getComplianceStatus(userId: string, tenantId: string): Promise<unknown> {
     return this.rulesEngine.getComplianceStatus(userId, tenantId);
   }
+
+  async findRegulations(user: AuthenticatedUser): Promise<unknown[]> {
+    return this.prisma.regulatoryRule.findMany({
+      where: {
+        OR: [
+          { tenantId: user.tenantId ?? null },
+          { tenantId: null },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
 }
 
 @ApiTags("Compliance")
@@ -343,6 +355,13 @@ class ComplianceController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Record<string, unknown>> {
     return this.complianceService.getStats(user);
+  }
+
+  @Get("regulations")
+  findRegulations(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown[]> {
+    return this.complianceService.findRegulations(user);
   }
 
   @Get("reports/transaction-summary")

@@ -11,21 +11,26 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, IsISO8601 } from "class-validator";
+import { IsEnum, IsInt, IsOptional, IsString, IsISO8601 } from "class-validator";
 import {
+  AssessorAccreditationStatus,
   ComplianceAlertSeverity,
   ComplianceAlertStatus,
   ComplianceAlertType,
   DisputeStatus,
   DisputeType,
+  DueDiligenceStatus,
   KycApplicationStatus,
   KycStatus,
   MembershipStatus,
   PlatformRole,
   Prisma,
+  ProviderAuditStatus,
   RiskRating,
   TransactionStatus,
   UserStatus,
@@ -85,6 +90,44 @@ class ResolveDisputeDto {
   @IsOptional()
   @IsString()
   resolution?: string;
+
+  @IsOptional()
+  @IsString()
+  priority?: string;
+
+  @IsOptional()
+  @IsString()
+  assignedTo?: string;
+}
+
+interface DisputeResponse {
+  id: string;
+  tenantId: string;
+  type: DisputeType;
+  status: DisputeStatus;
+  title: string;
+  description: string;
+  initiatorId: string;
+  entityType: string | null;
+  entityId: string | null;
+  evidence: Prisma.JsonValue | null;
+  communications: Prisma.JsonValue | null;
+  timeline: Prisma.JsonValue | null;
+  partyContacts: Prisma.JsonValue | null;
+  resolution: string | null;
+  resolvedAt: Date | null;
+  priority: string | null;
+  financialImpact: Prisma.Decimal | null;
+  assignedTo: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  initiator: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    avatar: string | null;
+  } | null;
 }
 
 class AuditLogFilterDto extends PaginationDto {
@@ -125,6 +168,72 @@ class RiskAssessmentDto {
   @IsOptional()
   @IsString()
   mitigationPlan?: string;
+}
+
+class UpdateAssessorTierDto {
+  @IsString()
+  tier!: string;
+}
+
+class ScheduleAuditDto {
+  @IsISO8601()
+  scheduledDate!: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+class UpdateAuditDto {
+  @IsOptional()
+  @IsEnum(ProviderAuditStatus)
+  status?: ProviderAuditStatus;
+
+  @IsOptional()
+  @IsISO8601()
+  completedDate?: string;
+
+  @IsOptional()
+  @IsString()
+  auditorName?: string;
+
+  @IsOptional()
+  @IsString()
+  findings?: string;
+
+  @IsOptional()
+  @IsInt()
+  score?: number;
+
+  @IsOptional()
+  @IsString()
+  recommendations?: string;
+}
+
+class AssignKycCaseDto {
+  @IsString()
+  assignedTo!: string;
+}
+
+class EscalateKycCaseDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+class StressTestScenarioDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  interestRateShock?: number;
+
+  @IsOptional()
+  defaultRateShock?: number;
+
+  @IsOptional()
+  marketDeclinePercent?: number;
 }
 
 @Injectable()
@@ -224,6 +333,33 @@ export class AdminService {
       activeAssessors,
       pendingKyc,
     };
+  }
+
+  async getDashboardCharts(
+    user: AuthenticatedUser,
+  ): Promise<{ month: string; completed: number; flagged: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+    const transactions = await this.prisma.transaction.findMany({
+      where: tenantWhere,
+      select: { createdAt: true, status: true },
+      orderBy: { createdAt: 'asc' },
+      take: 1000,
+    });
+    const monthMap = new Map<string, { completed: number; flagged: number }>();
+    for (const tx of transactions) {
+      const month = tx.createdAt.toLocaleString('en-US', { month: 'short' });
+      const entry = monthMap.get(month) ?? { completed: 0, flagged: 0 };
+      if (tx.status === TransactionStatus.COMPLETED) entry.completed++;
+      if (tx.status === TransactionStatus.FLAGGED) entry.flagged++;
+      monthMap.set(month, entry);
+    }
+    return Array.from(monthMap.entries()).map(([month, counts]) => ({
+      month,
+      completed: counts.completed,
+      flagged: counts.flagged,
+    }));
   }
 
   private async getFlaggedTransactionsCount(user: AuthenticatedUser): Promise<number> {
@@ -375,6 +511,306 @@ export class AdminService {
     };
   }
 
+  async getRiskFactors(
+    user: AuthenticatedUser,
+  ): Promise<{ factor: string; impact: number; affected: number; trend: "up" | "down" | "stable" }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const [alerts, projects, transactions] = await Promise.all([
+      this.prisma.complianceAlert.findMany({
+        where: {
+          ...tenantWhere,
+          status: ComplianceAlertStatus.OPEN,
+          type: {
+            in: [
+              ComplianceAlertType.REGULATORY_CHANGE,
+              ComplianceAlertType.KYC_ISSUE,
+              ComplianceAlertType.AML_FLAG,
+            ],
+          },
+        },
+        select: { type: true, severity: true },
+      }),
+      this.prisma.project.findMany({
+        where: {
+          ...tenantWhere,
+          riskRating: { in: [RiskRating.HIGH, RiskRating.CRITICAL] },
+          deletedAt: null,
+        },
+        select: { riskRating: true },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          ...tenantWhere,
+          status: TransactionStatus.FLAGGED,
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    const alertCounts = new Map<string, number>();
+    for (const alert of alerts) {
+      alertCounts.set(alert.type, (alertCounts.get(alert.type) || 0) + 1);
+    }
+
+    const highProjects = projects.filter(
+      (p) => p.riskRating === RiskRating.HIGH,
+    ).length;
+    const criticalProjects = projects.filter(
+      (p) => p.riskRating === RiskRating.CRITICAL,
+    ).length;
+
+    const factors: {
+      factor: string;
+      impact: number;
+      affected: number;
+      trend: "up" | "down" | "stable";
+    }[] = [];
+
+    const regCount = alertCounts.get(ComplianceAlertType.REGULATORY_CHANGE) || 0;
+    if (regCount > 0) {
+      factors.push({
+        factor: "Regulatory Changes",
+        impact: Math.min(100, 60 + regCount * 5),
+        affected: regCount,
+        trend: "stable",
+      });
+    }
+
+    const kycCount = alertCounts.get(ComplianceAlertType.KYC_ISSUE) || 0;
+    if (kycCount > 0) {
+      factors.push({
+        factor: "KYC Issues",
+        impact: Math.min(100, 55 + kycCount * 5),
+        affected: kycCount,
+        trend: "stable",
+      });
+    }
+
+    const amlCount = alertCounts.get(ComplianceAlertType.AML_FLAG) || 0;
+    if (amlCount > 0) {
+      factors.push({
+        factor: "Transaction Anomalies",
+        impact: Math.min(100, 65 + amlCount * 5),
+        affected: amlCount,
+        trend: "stable",
+      });
+    }
+
+    if (criticalProjects > 0) {
+      factors.push({
+        factor: "Critical Risk Projects",
+        impact: Math.min(100, 85 + criticalProjects * 3),
+        affected: criticalProjects,
+        trend: "stable",
+      });
+    }
+
+    if (highProjects > 0) {
+      factors.push({
+        factor: "High Risk Projects",
+        impact: Math.min(100, 70 + highProjects * 2),
+        affected: highProjects,
+        trend: "stable",
+      });
+    }
+
+    if (transactions.length > 0) {
+      factors.push({
+        factor: "Flagged Transactions",
+        impact: Math.min(100, 50 + transactions.length * 3),
+        affected: transactions.length,
+        trend: "stable",
+      });
+    }
+
+    return factors.sort((a, b) => b.impact - a.impact).slice(0, 6);
+  }
+
+  async getRiskChanges(
+    user: AuthenticatedUser,
+  ): Promise<
+    {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[]
+  > {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const auditLogs = await this.prisma.auditLog.findMany({
+      where: {
+        ...tenantWhere,
+        entityType: "Project",
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    const changes: {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[] = [];
+    const projectIds = new Set<string>();
+
+    for (const log of auditLogs) {
+      const oldValues =
+        (log.oldValues as Record<string, unknown> | null) || {};
+      const newValues =
+        (log.newValues as Record<string, unknown> | null) || {};
+      if (
+        oldValues.riskRating !== undefined ||
+        newValues.riskRating !== undefined
+      ) {
+        projectIds.add(log.entityId);
+      }
+    }
+
+    if (projectIds.size > 0) {
+      const projects = await this.prisma.project.findMany({
+        where: { id: { in: Array.from(projectIds) } },
+        select: { id: true, title: true },
+      });
+      const projectMap = new Map(projects.map((p) => [p.id, p.title]));
+
+      for (const log of auditLogs) {
+        const oldValues =
+          (log.oldValues as Record<string, unknown> | null) || {};
+        const newValues =
+          (log.newValues as Record<string, unknown> | null) || {};
+        if (
+          oldValues.riskRating !== undefined ||
+          newValues.riskRating !== undefined
+        ) {
+          changes.push({
+            projectId: log.entityId,
+            projectName: projectMap.get(log.entityId) || "Unknown Project",
+            changedAt: log.createdAt.toISOString(),
+            fromRating: String(oldValues.riskRating ?? "N/A"),
+            toRating: String(newValues.riskRating ?? "N/A"),
+            reason:
+              ((log.metadata as Record<string, unknown> | null)
+                ?.reason as string) || "Risk assessment updated",
+          });
+        }
+      }
+    }
+
+    if (changes.length === 0) {
+      const fallbackProjects = await this.prisma.project.findMany({
+        where: {
+          ...tenantWhere,
+          deletedAt: null,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: 10,
+        select: {
+          id: true,
+          title: true,
+          riskRating: true,
+          status: true,
+          updatedAt: true,
+          createdAt: true,
+        },
+      });
+
+      const recentProjects = fallbackProjects.filter(
+        (p) => p.updatedAt.getTime() - p.createdAt.getTime() > 60000,
+      );
+
+      return recentProjects.map((p) => ({
+        projectId: p.id,
+        projectName: p.title,
+        changedAt: p.updatedAt.toISOString(),
+        fromRating: p.riskRating ?? "N/A",
+        toRating: p.riskRating ?? "N/A",
+        reason: `Project ${p.status.toLowerCase()} updated`,
+      }));
+    }
+
+    return changes.slice(0, 10);
+  }
+
+  async getRiskInvestors(
+    user: AuthenticatedUser,
+  ): Promise<{ investorId: string; name: string; commitment: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const grouped = await this.prisma.investment.groupBy({
+      by: ["investorUserId"],
+      where: tenantWhere,
+      _sum: { amount: true },
+    });
+
+    const investorIds = grouped.map((g) => g.investorUserId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: investorIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const userMap = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+
+    const result = grouped.map((g) => ({
+      investorId: g.investorUserId,
+      name: userMap.get(g.investorUserId) || "Unknown",
+      commitment: g._sum.amount?.toNumber() ?? 0,
+    }));
+
+    return result
+      .sort((a, b) => b.commitment - a.commitment)
+      .slice(0, 8);
+  }
+
+  async getRiskCounterparties(
+    user: AuthenticatedUser,
+  ): Promise<{ name: string; limit: number; exposure: number }[]> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user)
+      ? {}
+      : { tenantId: user.tenantId };
+
+    const grouped = await this.prisma.investment.groupBy({
+      by: ["investorUserId"],
+      where: tenantWhere,
+      _sum: { amount: true },
+    });
+
+    const investorIds = grouped.map((g) => g.investorUserId);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: investorIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const userMap = new Map(
+      users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+    );
+
+    const result = grouped.map((g) => {
+      const exposure = g._sum.amount?.toNumber() ?? 0;
+      return {
+        name: userMap.get(g.investorUserId) || "Unknown",
+        limit: Math.max(5000000, exposure * 2),
+        exposure,
+      };
+    });
+
+    return result
+      .sort((a, b) => b.exposure - a.exposure)
+      .slice(0, 6);
+  }
+
   async findDisputes(
     filter: DisputeFilterDto,
     user: AuthenticatedUser,
@@ -391,7 +827,17 @@ export class AdminService {
     const [data, total] = await Promise.all([
       this.prisma.dispute.findMany({
         where,
-        include: { initiator: true },
+        include: {
+          initiator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              avatar: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
@@ -401,13 +847,13 @@ export class AdminService {
     return { data, meta: toPaginationMeta(page, limit, total) };
   }
 
-  async findDisputeById(id: string): Promise<unknown> {
+  async findDisputeById(id: string): Promise<DisputeResponse> {
     const dispute = await this.prisma.dispute.findUnique({
       where: { id },
-      include: { initiator: true },
+      include: { initiator: { select: { id: true, firstName: true, lastName: true, email: true, avatar: true } } },
     });
     if (!dispute) throw new NotFoundException("Dispute not found");
-    return dispute;
+    return dispute as DisputeResponse;
   }
 
   async updateDispute(id: string, dto: ResolveDisputeDto): Promise<unknown> {
@@ -416,6 +862,8 @@ export class AdminService {
       data: {
         status: dto.status,
         resolution: dto.resolution,
+        priority: dto.priority,
+        assignedTo: dto.assignedTo,
         resolvedAt:
           dto.status === DisputeStatus.RESOLVED ||
           dto.status === DisputeStatus.CLOSED
@@ -511,23 +959,51 @@ export class AdminService {
           ],
         }
       : {};
-    const [data, total] = await Promise.all([
+    const [profiles, total] = await Promise.all([
       this.prisma.assessorProfile.findMany({
         where,
-        include: { user: true },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+              status: true,
+              kycStatus: true,
+              countryCode: true,
+              createdAt: true,
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.assessorProfile.count({ where }),
     ]);
-    return { data, meta: toPaginationMeta(page, limit, total) };
+    return { data: profiles, meta: toPaginationMeta(page, limit, total) };
   }
 
   async findAssessorById(id: string): Promise<unknown> {
     const assessor = await this.prisma.assessorProfile.findUnique({
       where: { id },
-      include: { user: true },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+            status: true,
+            kycStatus: true,
+            countryCode: true,
+            createdAt: true,
+          },
+        },
+      },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
     return assessor;
@@ -539,11 +1015,76 @@ export class AdminService {
       include: { user: true },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
-    await this.prisma.user.update({
-      where: { id: assessor.userId },
-      data: { kycStatus: KycStatus.VERIFIED },
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: assessor.userId },
+        data: { kycStatus: KycStatus.VERIFIED },
+      }),
+      this.prisma.assessorProfile.update({
+        where: { id },
+        data: { accreditationStatus: AssessorAccreditationStatus.ACCREDITED },
+      }),
+    ]);
+    return this.findAssessorById(id);
+  }
+
+  async updateAssessorTier(id: string, dto: UpdateAssessorTierDto): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    await this.prisma.assessorProfile.update({
+      where: { id },
+      data: { tier: dto.tier },
     });
     return this.findAssessorById(id);
+  }
+
+  async scheduleAudit(assessorId: string, dto: ScheduleAuditDto): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id: assessorId },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    const audit = await this.prisma.providerAudit.create({
+      data: {
+        assessorId,
+        scheduledDate: new Date(dto.scheduledDate),
+        findings: dto.notes,
+      },
+    });
+    return audit;
+  }
+
+  async getProviderAudits(assessorId: string): Promise<unknown> {
+    const assessor = await this.prisma.assessorProfile.findUnique({
+      where: { id: assessorId },
+    });
+    if (!assessor) throw new NotFoundException("Assessor not found");
+    const audits = await this.prisma.providerAudit.findMany({
+      where: { assessorId },
+      orderBy: { scheduledDate: 'desc' },
+    });
+    return audits;
+  }
+
+  async updateAudit(id: string, dto: UpdateAuditDto): Promise<unknown> {
+    const audit = await this.prisma.providerAudit.findUnique({
+      where: { id },
+    });
+    if (!audit) throw new NotFoundException("Audit not found");
+    const updated = await this.prisma.providerAudit.update({
+      where: { id },
+      data: {
+        ...(dto.status && { status: dto.status }),
+        ...(dto.completedDate && { completedDate: new Date(dto.completedDate) }),
+        ...(dto.auditorName !== undefined && { auditorName: dto.auditorName }),
+        ...(dto.findings !== undefined && { findings: dto.findings }),
+        ...(dto.score !== undefined && { score: dto.score }),
+        ...(dto.recommendations !== undefined && { recommendations: dto.recommendations }),
+      },
+    });
+    return updated;
   }
 
   async suspendAssessor(id: string): Promise<unknown> {
@@ -552,10 +1093,16 @@ export class AdminService {
       include: { user: true },
     });
     if (!assessor) throw new NotFoundException("Assessor not found");
-    await this.prisma.user.update({
-      where: { id: assessor.userId },
-      data: { status: UserStatus.SUSPENDED },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: assessor.userId },
+        data: { status: UserStatus.SUSPENDED },
+      }),
+      this.prisma.assessorProfile.update({
+        where: { id },
+        data: { accreditationStatus: AssessorAccreditationStatus.SUSPENDED },
+      }),
+    ]);
     return this.findAssessorById(id);
   }
 
@@ -639,9 +1186,25 @@ export class AdminService {
         investorProfile: true,
         entrepreneurProfile: true,
         assessorProfile: true,
+        kycApplications: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
+      take: 50,
     });
+
+    const userIds = users.map((u) => u.id);
+    const allAlerts = userIds.length > 0
+      ? await this.prisma.complianceAlert.findMany({
+          where: { entityId: { in: userIds }, entityType: "user" },
+        })
+      : [];
+
+    const alertsByUser = new Map<string, typeof allAlerts>();
+    for (const alert of allAlerts) {
+      const list = alertsByUser.get(alert.entityId) ?? [];
+      list.push(alert);
+      alertsByUser.set(alert.entityId, list);
+    }
 
     return users.map((u) => {
       let company: string | null = null;
@@ -650,25 +1213,174 @@ export class AdminService {
       } else if (u.assessorProfile) {
         company = u.assessorProfile.organizationName;
       }
+
+      const latestKyc = u.kycApplications[0];
+      const alerts = alertsByUser.get(u.id) ?? [];
+      const riskFlags = alerts
+        .filter((a) => a.severity === ComplianceAlertSeverity.HIGH || a.severity === ComplianceAlertSeverity.CRITICAL)
+        .map((a) => ({ type: a.type, severity: a.severity, title: a.title }));
+
+      const submittedData = latestKyc?.submittedData;
+      const documentsReceived =
+        submittedData &&
+        typeof submittedData === "object" &&
+        !Array.isArray(submittedData) &&
+        "documents" in submittedData
+          ? (submittedData as Record<string, unknown>).documents
+          : [];
+
+      const priority =
+        riskFlags.length > 2
+          ? "critical"
+          : riskFlags.length > 0
+            ? "high"
+            : u.riskLevel === RiskRating.HIGH || u.riskLevel === RiskRating.CRITICAL
+              ? "high"
+              : "medium";
+
       return {
         id: u.id,
-        name: `${u.firstName} ${u.lastName}`.trim(),
+        userName: `${u.firstName} ${u.lastName}`.trim(),
+        userRole: u.investorProfile ? "investor" : u.entrepreneurProfile ? "entrepreneur" : u.assessorProfile ? "provider" : "unknown",
         email: u.email,
         status: u.status,
         kycStatus: u.kycStatus,
-        country: u.countryCode,
+        jurisdiction: u.countryCode,
         company,
-        documents:
-          u.preferences &&
-          typeof u.preferences === "object" &&
-          !Array.isArray(u.preferences) &&
-          "kycDocuments" in u.preferences
-            ? (u.preferences as Record<string, unknown>).kycDocuments
-            : null,
+        priority,
+        assignedTo: alerts.find((a) => a.assignedTo)?.assignedTo ?? null,
+        submittedDate: latestKyc?.createdAt ?? u.createdAt,
+        documentsReceived: Array.isArray(documentsReceived) ? documentsReceived.length : 0,
+        documentsRequired: 5,
+        riskFlags,
+        notes: latestKyc?.rejectionReason ?? null,
         registeredDate: u.createdAt,
         lastActive: u.lastLoginAt,
       };
     });
+  }
+
+  async assignKycCase(
+    authUser: AuthenticatedUser,
+    userId: string,
+    dto: AssignKycCaseDto,
+  ): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const existingAlert = await this.prisma.complianceAlert.findFirst({
+      where: { entityId: userId, entityType: "USER" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existingAlert) {
+      await this.prisma.complianceAlert.update({
+        where: { id: existingAlert.id },
+        data: { assignedTo: dto.assignedTo },
+      });
+    } else {
+      await this.prisma.complianceAlert.create({
+        data: {
+          tenantId: authUser.tenantId,
+          type: ComplianceAlertType.KYC_ISSUE,
+          severity: ComplianceAlertSeverity.MEDIUM,
+          status: ComplianceAlertStatus.OPEN,
+          entityType: "USER",
+          entityId: userId,
+          title: "KYC Case Assignment",
+          description: "KYC case assigned for manual review",
+          assignedTo: dto.assignedTo,
+        },
+      });
+    }
+
+    return { success: true, userId, assignedTo: dto.assignedTo };
+  }
+
+  async escalateKycCase(
+    authUser: AuthenticatedUser,
+    userId: string,
+    dto: EscalateKycCaseDto,
+  ): Promise<unknown> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    await this.prisma.complianceAlert.create({
+      data: {
+        tenantId: authUser.tenantId,
+        type: ComplianceAlertType.KYC_ISSUE,
+        severity: ComplianceAlertSeverity.CRITICAL,
+        status: ComplianceAlertStatus.OPEN,
+        entityType: "USER",
+        entityId: userId,
+        title: "KYC Case Escalated",
+        description: dto.reason || "KYC case manually escalated by compliance officer",
+      },
+    });
+
+    return { success: true, userId, escalated: true };
+  }
+
+  async stressTest(
+    user: AuthenticatedUser,
+    dto: StressTestScenarioDto,
+  ): Promise<Record<string, unknown>> {
+    const tenantWhere = this.permissions.isPlatformAdmin(user) ? {} : { tenantId: user.tenantId };
+    const [projects, investments] = await Promise.all([
+      this.prisma.project.findMany({
+        where: { ...tenantWhere, deletedAt: null },
+        include: { investments: true, deals: true },
+      }),
+      this.prisma.investment.findMany({
+        where: { ...tenantWhere, status: { not: "CANCELLED" as any } },
+      }),
+    ]);
+
+    const totalPortfolioValue = investments.reduce(
+      (sum, inv) => sum + inv.amount.toNumber(),
+      0,
+    );
+
+    const scenarioMultiplier = 1 - (dto.marketDeclinePercent ?? 0) / 100;
+    const stressedPortfolioValue = totalPortfolioValue * scenarioMultiplier;
+    const defaultRate = Math.min(
+      ((dto.defaultRateShock ?? 0) + (dto.interestRateShock ?? 0) * 0.5) / 100,
+      1,
+    );
+    const estimatedLosses = stressedPortfolioValue * defaultRate;
+    const recoveryRate = 0.4;
+    const navImpact = estimatedLosses * (1 - recoveryRate);
+
+    const sectorBreakdown = projects.reduce((acc, project) => {
+      const sector = project.sector;
+      const projectInvestments = project.investments.reduce(
+        (sum, inv) => sum + inv.amount.toNumber(),
+        0,
+      );
+      if (!acc[sector]) acc[sector] = 0;
+      acc[sector] += projectInvestments * scenarioMultiplier;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      scenario: dto.name ?? "Custom Stress Test",
+      parameters: {
+        interestRateShock: dto.interestRateShock ?? 0,
+        defaultRateShock: dto.defaultRateShock ?? 0,
+        marketDeclinePercent: dto.marketDeclinePercent ?? 0,
+      },
+      results: {
+        totalPortfolioValue,
+        stressedPortfolioValue,
+        defaultRate: defaultRate * 100,
+        estimatedLosses,
+        recoveryRate: recoveryRate * 100,
+        navImpact,
+      },
+      sectorBreakdown,
+      projectCount: projects.length,
+      investmentCount: investments.length,
+    };
   }
 
   // ============= Regulatory Reports =============
@@ -908,6 +1620,113 @@ export class AdminService {
     };
   }
 
+  private toCsv(rows: Array<Record<string, unknown>>): string {
+    if (rows.length === 0) return "";
+    const headers = Object.keys(rows[0]);
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.join(","),
+      ...rows.map((row) => headers.map((h) => escape(row[h])).join(",")),
+    ];
+    return lines.join("\n");
+  }
+
+  async exportData(user: AuthenticatedUser): Promise<{ filename: string; csv: string }> {
+    const tenantWhere = this.getTenantWhere(user);
+
+    const [users, transactions, projects] = await Promise.all([
+      this.prisma.user.findMany({
+        where: tenantWhere,
+        include: { memberships: { select: { role: true }, take: 1 } },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+      this.prisma.transaction.findMany({
+        where: tenantWhere,
+        select: { id: true, type: true, amount: true, currency: true, status: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+      this.prisma.project.findMany({
+        where: { ...tenantWhere, deletedAt: null },
+        select: { id: true, title: true, sector: true, status: true, fundingTarget: true, currency: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 10000,
+      }),
+    ]);
+
+    const userRows = users.map((u) => ({
+      entity: "user",
+      id: u.id,
+      email: u.email,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      status: u.status,
+      kycStatus: u.kycStatus,
+      role: u.memberships[0]?.role ?? "",
+      createdAt: u.createdAt.toISOString(),
+    }));
+
+    const txRows = transactions.map((t) => ({
+      entity: "transaction",
+      id: t.id,
+      type: t.type,
+      amount: t.amount.toString(),
+      currency: t.currency,
+      status: t.status,
+      createdAt: t.createdAt.toISOString(),
+    }));
+
+    const projectRows = projects.map((p) => ({
+      entity: "project",
+      id: p.id,
+      title: p.title,
+      sector: p.sector,
+      status: p.status,
+      fundingTarget: p.fundingTarget.toString(),
+      currency: p.currency,
+      createdAt: p.createdAt.toISOString(),
+    }));
+
+    return {
+      filename: `evzone-export-${new Date().toISOString().split("T")[0]}.csv`,
+      csv: this.toCsv([...userRows, ...txRows, ...projectRows]),
+    };
+  }
+
+  async exportAuditLogs(user: AuthenticatedUser): Promise<{ filename: string; csv: string }> {
+    const tenantWhere = this.getTenantWhere(user);
+    const logs = await this.prisma.auditLog.findMany({
+      where: tenantWhere,
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10000,
+    });
+
+    const rows = logs.map((l) => ({
+      id: l.id,
+      timestamp: l.createdAt.toISOString(),
+      user: l.user ? `${l.user.firstName} ${l.user.lastName}`.trim() : "System",
+      email: l.user?.email ?? "",
+      action: l.action,
+      entityType: l.entityType,
+      entityId: l.entityId,
+      ipAddress: l.ipAddress ?? "",
+    }));
+
+    return {
+      filename: `evzone-audit-logs-${new Date().toISOString().split("T")[0]}.csv`,
+      csv: this.toCsv(rows),
+    };
+  }
+
   async getLedgerReconciliationReport(
     user: AuthenticatedUser,
     dto?: ReportDateRangeDto,
@@ -968,7 +1787,17 @@ export class AdminService {
      const [items, total] = await Promise.all([
        this.prisma.dispute.findMany({
          where,
-         include: { initiator: true },
+         include: {
+           initiator: {
+             select: {
+               id: true,
+               firstName: true,
+               lastName: true,
+               email: true,
+               avatar: true,
+             },
+           },
+         },
          orderBy: { createdAt: "desc" },
          skip: (page - 1) * limit,
          take: limit,
@@ -1055,6 +1884,13 @@ class AdminController {
     return this.adminService.getDashboard(user);
   }
 
+  @Get("dashboard/charts")
+  getDashboardCharts(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ month: string; completed: number; flagged: number }[]> {
+    return this.adminService.getDashboardCharts(user);
+  }
+
   @Get("risk/projects")
   findRiskProjects(): Promise<unknown[]> {
     return this.adminService.findRiskProjects();
@@ -1071,6 +1907,54 @@ class AdminController {
   @Get("risk/stats")
   getRiskStats(): Promise<Record<string, unknown>> {
     return this.adminService.getRiskStats();
+  }
+
+  @Post("risk/stress-test")
+  @HttpCode(HttpStatus.OK)
+  stressTest(
+    @Body() dto: StressTestScenarioDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.stressTest(user, dto);
+  }
+
+  @Get("risk/factors")
+  getRiskFactors(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<
+    { factor: string; impact: number; affected: number; trend: "up" | "down" | "stable" }[]
+  > {
+    return this.adminService.getRiskFactors(user);
+  }
+
+  @Get("risk/changes")
+  getRiskChanges(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<
+    {
+      projectId: string;
+      projectName: string;
+      changedAt: string;
+      fromRating: string;
+      toRating: string;
+      reason: string;
+    }[]
+  > {
+    return this.adminService.getRiskChanges(user);
+  }
+
+  @Get("risk/investors")
+  getRiskInvestors(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ investorId: string; name: string; commitment: number }[]> {
+    return this.adminService.getRiskInvestors(user);
+  }
+
+  @Get("risk/counterparties")
+  getRiskCounterparties(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ name: string; limit: number; exposure: number }[]> {
+    return this.adminService.getRiskCounterparties(user);
   }
 
   @Get("disputes")
@@ -1138,6 +2022,39 @@ class AdminController {
     return this.adminService.verifyAssessor(id);
   }
 
+  @Patch("assessors/:id/tier")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateAssessorTier(
+    @Param("id") id: string,
+    @Body() dto: UpdateAssessorTierDto,
+  ): Promise<unknown> {
+    return this.adminService.updateAssessorTier(id, dto);
+  }
+
+  @Post("assessors/:id/audits")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  scheduleAudit(
+    @Param("id") id: string,
+    @Body() dto: ScheduleAuditDto,
+  ): Promise<unknown> {
+    return this.adminService.scheduleAudit(id, dto);
+  }
+
+  @Get("assessors/:id/audits")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getProviderAudits(@Param("id") id: string): Promise<unknown> {
+    return this.adminService.getProviderAudits(id);
+  }
+
+  @Patch("audits/:id")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateAudit(
+    @Param("id") id: string,
+    @Body() dto: UpdateAuditDto,
+  ): Promise<unknown> {
+    return this.adminService.updateAudit(id, dto);
+  }
+
   @Post("assessors/:id/suspend")
   suspendAssessor(@Param("id") id: string): Promise<unknown> {
     return this.adminService.suspendAssessor(id);
@@ -1171,6 +2088,48 @@ class AdminController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<unknown[]> {
     return this.adminService.findKycCases(user, status);
+  }
+
+  @Patch("kyc-cases/:id/assign")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.COMPLIANCE_OFFICER)
+  assignKycCase(
+    @Param("id") id: string,
+    @Body() dto: AssignKycCaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.adminService.assignKycCase(user, id, dto);
+  }
+
+  @Patch("kyc-cases/:id/escalate")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN, PlatformRole.COMPLIANCE_OFFICER)
+  escalateKycCase(
+    @Param("id") id: string,
+    @Body() dto: EscalateKycCaseDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<unknown> {
+    return this.adminService.escalateKycCase(user, id, dto);
+  }
+
+  @Get("export/data")
+  async exportData(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, csv } = await this.adminService.exportData(user);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
+  @Get("export/audit-logs")
+  async exportAuditLogs(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, csv } = await this.adminService.exportAuditLogs(user);
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(csv);
   }
 
 }

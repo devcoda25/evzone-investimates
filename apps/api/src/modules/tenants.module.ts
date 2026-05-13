@@ -179,6 +179,43 @@ class TenantsService {
     return this.toResponse(tenant);
   }
 
+  async getSettings(id: string, user: AuthenticatedUser): Promise<Record<string, unknown>> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) throw new NotFoundException("Tenant not found");
+    if (!this.permissions.isPlatformAdmin(user) && user.tenantId !== id) {
+      throw new NotFoundException("Tenant not found");
+    }
+    return (tenant.settings ?? {}) as Record<string, unknown>;
+  }
+
+  async updateSettings(
+    id: string,
+    settings: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<TenantResponse> {
+    const existing = await this.prisma.tenant.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Tenant not found");
+    if (!this.permissions.isPlatformAdmin(user) && user.tenantId !== id) {
+      throw new NotFoundException("Tenant not found");
+    }
+    const current =
+      existing.settings && typeof existing.settings === "object" && !Array.isArray(existing.settings)
+        ? (existing.settings as Record<string, unknown>)
+        : {};
+    const tenant = await this.prisma.tenant.update({
+      where: { id },
+      data: { settings: { ...current, ...settings } as Prisma.InputJsonValue },
+      include: {
+        users: {
+          where: { userId: user.id },
+          select: { role: true, status: true },
+          take: 1,
+        },
+      },
+    });
+    return this.toResponse(tenant);
+  }
+
   private toResponse(
     tenant: Prisma.TenantGetPayload<{
       include: {
@@ -242,6 +279,25 @@ class TenantsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<TenantResponse> {
     return this.tenantsService.update(id, dto, user);
+  }
+
+  @Get(":id/settings")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  getSettings(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    return this.tenantsService.getSettings(id, user);
+  }
+
+  @Patch(":id/settings")
+  @Roles(PlatformRole.ADMIN, PlatformRole.SUPER_ADMIN)
+  updateSettings(
+    @Param("id") id: string,
+    @Body() dto: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<TenantResponse> {
+    return this.tenantsService.updateSettings(id, dto, user);
   }
 }
 
