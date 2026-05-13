@@ -10,7 +10,7 @@ import type { Server } from "http";
  */
 export function testClient(
   app: INestApplication,
-): request.SuperTest<request.Test> {
+): request.Agent {
   return request(app.getHttpServer() as Server);
 }
 

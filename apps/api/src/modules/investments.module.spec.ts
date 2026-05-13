@@ -39,6 +39,8 @@ describe("InvestmentsService", () => {
       { create: jest.fn() } as any,
       { isPlatformAdmin: jest.fn().mockReturnValue(false) } as any,
       { createCollectionIntent: jest.fn() } as any,
+      { record: jest.fn(), recordFromRequest: jest.fn() } as any,
+      { getIdempotency: jest.fn(), setIdempotency: jest.fn() } as any,
     );
 
     const result = await service.invest(
